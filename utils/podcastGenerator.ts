@@ -3,6 +3,30 @@ import { Podcast } from "./storage";
 
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || "";
 
+const TEST_MODE = true;
+
+const TEST_SCRIPT = `Welcome back to Deep Dive, where we explore the fascinating corners of our world... Today, we're diving into something you've probably wondered about at some point.
+
+You know, it's remarkable how much there is to discover when we really look into a topic. The research on this is genuinely surprising... Studies have shown patterns that most people never even consider.
+
+Here's what I find most interesting... When experts first started examining this area, they expected to find one thing, but reality turned out to be far more complex. The data tells a story that challenges our assumptions.
+
+Let me break this down for you... First, there's the fundamental aspect that forms the foundation. Then, we have the secondary elements that build upon that base. And finally, there are the emerging trends that are reshaping how we think about all of this.
+
+What really stands out to me is how interconnected everything is. One small change can ripple outward in ways we never anticipated. It's a reminder that our world operates as a system, not as isolated parts.
+
+So what does this mean for you? Well, the next time you encounter this topic, you'll see it through a completely different lens. And that's what I love about learning... it transforms how we experience everyday life.
+
+That's all for today's episode. Keep exploring, keep questioning, and I'll see you in the next Deep Dive.`;
+
+const TEST_SOURCES = [
+  "Academic research publications and peer-reviewed journals",
+  "Industry expert interviews and analysis",
+  "Government statistical databases",
+  "Historical archives and documentation",
+  "Scientific research institutions",
+];
+
 export interface GenerationProgress {
   stage: "searching" | "analyzing" | "generating" | "creating_audio" | "done";
   message: string;
@@ -17,6 +41,14 @@ interface ResearchResult {
 }
 
 async function researchTopic(topic: string): Promise<ResearchResult> {
+  if (TEST_MODE) {
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return {
+      content: `Research notes on "${topic}": This is a comprehensive overview of the topic covering key facts, statistics, recent developments, and expert perspectives.`,
+      sources: TEST_SOURCES,
+    };
+  }
+
   if (!OPENAI_API_KEY) {
     throw new Error(
       "OpenAI API key is not configured. Please add EXPO_PUBLIC_OPENAI_API_KEY to your environment."
@@ -109,6 +141,11 @@ async function generatePodcastScript(
   topic: string,
   research: ResearchResult
 ): Promise<string> {
+  if (TEST_MODE) {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    return TEST_SCRIPT.replace("this topic", `"${topic}"`);
+  }
+
   if (!OPENAI_API_KEY) {
     throw new Error(
       "OpenAI API key is not configured. Please add EXPO_PUBLIC_OPENAI_API_KEY to your environment."
@@ -186,6 +223,16 @@ async function generateAudio(
   podcastId: string,
   voice: string = "onyx"
 ): Promise<{ uri: string; duration: number }> {
+  if (TEST_MODE) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const wordCount = script.split(/\s+/).length;
+    const estimatedDuration = Math.round((wordCount / 150) * 60);
+    return {
+      uri: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+      duration: estimatedDuration,
+    };
+  }
+
   if (!OPENAI_API_KEY) {
     throw new Error("OpenAI API key is not configured");
   }
@@ -226,7 +273,10 @@ async function generateAudio(
     });
 
     const audioDir = `${FileSystem.documentDirectory}podcasts/`;
-    await FileSystem.makeDirectoryAsync(audioDir, { intermediates: true });
+    const dirInfo = await FileSystem.getInfoAsync(audioDir);
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(audioDir, { intermediates: true });
+    }
 
     const audioUri = `${audioDir}${podcastId}.mp3`;
     await FileSystem.writeAsStringAsync(audioUri, base64Audio, {
