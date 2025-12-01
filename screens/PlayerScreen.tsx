@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
-import { StyleSheet, View, Pressable, Alert, Platform } from "react-native";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { StyleSheet, View, Pressable, Alert, Platform, ScrollView, Animated } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
@@ -26,6 +26,34 @@ type PlayerScreenProps = {
   route: RouteProp<LibraryStackParamList | CreateStackParamList, "Player">;
 };
 
+interface Sentence {
+  text: string;
+  startTime: number;
+  endTime: number;
+}
+
+function parseScriptToSentences(script: string, totalDuration: number): Sentence[] {
+  const sentenceRegex = /[^.!?…]+[.!?…]+/g;
+  const matches = script.match(sentenceRegex) || [script];
+  const sentences = matches.map(s => s.trim()).filter(s => s.length > 0);
+  
+  const totalWords = sentences.reduce((sum, s) => sum + s.split(/\s+/).length, 0);
+  const wordsPerSecond = totalWords / Math.max(totalDuration, 1);
+  
+  let currentTime = 0;
+  return sentences.map(text => {
+    const wordCount = text.split(/\s+/).length;
+    const sentenceDuration = wordCount / wordsPerSecond;
+    const sentence: Sentence = {
+      text,
+      startTime: currentTime,
+      endTime: currentTime + sentenceDuration,
+    };
+    currentTime += sentenceDuration;
+    return sentence;
+  });
+}
+
 export default function PlayerScreen({ navigation, route }: PlayerScreenProps) {
   const { theme } = useTheme();
   const { podcastId } = route.params;
@@ -33,8 +61,35 @@ export default function PlayerScreen({ navigation, route }: PlayerScreenProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [showSources, setShowSources] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
   const isSeeking = useRef(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const sentenceRefs = useRef<{ [key: number]: number }>({});
+
+  const sentences = useMemo(() => {
+    if (!podcast?.script) return [];
+    return parseScriptToSentences(podcast.script, duration);
+  }, [podcast?.script, duration]);
+
+  const currentSentenceIndex = useMemo(() => {
+    for (let i = sentences.length - 1; i >= 0; i--) {
+      if (position >= sentences[i].startTime) {
+        return i;
+      }
+    }
+    return 0;
+  }, [position, sentences]);
+
+  useEffect(() => {
+    if (scrollViewRef.current && sentenceRefs.current[currentSentenceIndex] !== undefined) {
+      const yOffset = sentenceRefs.current[currentSentenceIndex];
+      scrollViewRef.current.scrollTo({
+        y: Math.max(0, yOffset - 100),
+        animated: true,
+      });
+    }
+  }, [currentSentenceIndex]);
 
   useEffect(() => {
     loadPodcast();
@@ -172,6 +227,15 @@ export default function PlayerScreen({ navigation, route }: PlayerScreenProps) {
     );
   };
 
+  const handleSentencePress = async (index: number) => {
+    if (!soundRef.current) return;
+    const sentence = sentences[index];
+    if (sentence) {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await soundRef.current.setPositionAsync(sentence.startTime * 1000);
+    }
+  };
+
   if (!podcast) {
     return (
       <ThemedView style={styles.container}>
@@ -182,126 +246,150 @@ export default function PlayerScreen({ navigation, route }: PlayerScreenProps) {
 
   return (
     <ThemedView style={styles.container}>
-      <View style={styles.content}>
-        <View style={styles.waveformContainer}>
-          <AnimatedWaveform isPlaying={isPlaying} color={theme.primary} />
-        </View>
+      <View style={styles.waveformContainer}>
+        <AnimatedWaveform isPlaying={isPlaying} color={theme.primary} />
+      </View>
 
-        <ThemedText type="h2" style={styles.title} numberOfLines={3}>
-          {podcast.topic}
-        </ThemedText>
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.lyricsContainer}
+        contentContainerStyle={styles.lyricsContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {sentences.map((sentence, index) => {
+          const isActive = index === currentSentenceIndex;
+          const isPast = index < currentSentenceIndex;
+          
+          return (
+            <Pressable
+              key={index}
+              onPress={() => handleSentencePress(index)}
+              onLayout={(event) => {
+                sentenceRefs.current[index] = event.nativeEvent.layout.y;
+              }}
+            >
+              <ThemedText
+                style={[
+                  styles.lyricText,
+                  isActive && styles.lyricTextActive,
+                  isActive && { color: theme.primary },
+                  isPast && styles.lyricTextPast,
+                  isPast && { opacity: 0.4 },
+                ]}
+              >
+                {sentence.text}
+              </ThemedText>
+            </Pressable>
+          );
+        })}
+        <View style={styles.lyricsBottomPadding} />
+      </ScrollView>
 
-        {podcast.sources && podcast.sources.length > 0 && (
-          <View style={styles.sourcesContainer}>
-            <ThemedText type="small" style={styles.sourcesLabel}>
-              Sources:
-            </ThemedText>
-            {podcast.sources.map((source, index) => (
+      <View style={[styles.bottomBar, { backgroundColor: theme.backgroundDefault }]}>
+        {showSources && podcast.sources && podcast.sources.length > 0 && (
+          <View style={[styles.sourcesPanel, { backgroundColor: theme.backgroundSecondary }]}>
+            <ThemedText type="small" style={styles.sourcesTitle}>Sources</ThemedText>
+            {podcast.sources.slice(0, 3).map((source, index) => (
               <ThemedText
                 key={index}
                 type="caption"
-                style={[styles.sourceItem, { color: theme.textSecondary }]}
-                numberOfLines={2}
+                style={{ color: theme.textSecondary }}
+                numberOfLines={1}
               >
-                • {source}
+                {source}
               </ThemedText>
             ))}
           </View>
         )}
 
-        <View style={styles.progressContainer}>
-          <Slider
-            style={styles.slider}
-            minimumValue={0}
-            maximumValue={duration || 1}
-            value={position}
-            onValueChange={handleSeek}
-            onSlidingStart={() => {
-              isSeeking.current = true;
-            }}
-            onSlidingComplete={handleSeekComplete}
-            minimumTrackTintColor={theme.primary}
-            maximumTrackTintColor={theme.backgroundSecondary}
-            thumbTintColor={theme.primary}
-          />
-          <View style={styles.timeContainer}>
-            <ThemedText type="caption">{formatDuration(position)}</ThemedText>
-            <ThemedText type="caption">{formatDuration(duration)}</ThemedText>
+        <View style={styles.titleRow}>
+          <ThemedText type="small" style={styles.titleText} numberOfLines={1}>
+            {podcast.topic}
+          </ThemedText>
+          <View style={styles.timeRow}>
+            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+              {formatDuration(position)} / {formatDuration(duration)}
+            </ThemedText>
           </View>
         </View>
 
-        <View style={styles.controlsContainer}>
-          <Pressable
-            onPress={() => handleSkip(-15)}
-            style={({ pressed }) => [
-              styles.skipButton,
-              { opacity: pressed ? 0.7 : 1 },
-            ]}
-          >
-            <Feather name="rotate-ccw" size={28} color={theme.text} />
-            <ThemedText type="caption" style={styles.skipLabel}>
-              15
-            </ThemedText>
-          </Pressable>
+        <Slider
+          style={styles.slider}
+          minimumValue={0}
+          maximumValue={duration || 1}
+          value={position}
+          onValueChange={handleSeek}
+          onSlidingStart={() => {
+            isSeeking.current = true;
+          }}
+          onSlidingComplete={handleSeekComplete}
+          minimumTrackTintColor={theme.primary}
+          maximumTrackTintColor={theme.backgroundSecondary}
+          thumbTintColor={theme.primary}
+        />
 
-          <Pressable
-            onPress={handlePlayPause}
-            style={({ pressed }) => [
-              styles.playButton,
-              {
-                backgroundColor: theme.primary,
-                transform: [{ scale: pressed ? 0.95 : 1 }],
-              },
-            ]}
-          >
-            <Feather
-              name={isPlaying ? "pause" : "play"}
-              size={32}
-              color="#FFFFFF"
-              style={isPlaying ? undefined : { marginLeft: 4 }}
-            />
-          </Pressable>
+        <View style={styles.controlsRow}>
+          <View style={styles.leftActions}>
+            <Pressable
+              onPress={() => setShowSources(!showSources)}
+              style={({ pressed }) => [styles.smallButton, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Feather 
+                name="info" 
+                size={18} 
+                color={showSources ? theme.primary : theme.textSecondary} 
+              />
+            </Pressable>
+            <Pressable
+              onPress={handleShare}
+              style={({ pressed }) => [styles.smallButton, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Feather name="share" size={18} color={theme.textSecondary} />
+            </Pressable>
+          </View>
 
-          <Pressable
-            onPress={() => handleSkip(15)}
-            style={({ pressed }) => [
-              styles.skipButton,
-              { opacity: pressed ? 0.7 : 1 },
-            ]}
-          >
-            <Feather name="rotate-cw" size={28} color={theme.text} />
-            <ThemedText type="caption" style={styles.skipLabel}>
-              15
-            </ThemedText>
-          </Pressable>
-        </View>
+          <View style={styles.mainControls}>
+            <Pressable
+              onPress={() => handleSkip(-15)}
+              style={({ pressed }) => [styles.skipButton, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Feather name="rotate-ccw" size={20} color={theme.text} />
+            </Pressable>
 
-        <View style={styles.actionsContainer}>
-          <Pressable
-            onPress={handleShare}
-            style={({ pressed }) => [
-              styles.actionButton,
-              { backgroundColor: theme.backgroundDefault, opacity: pressed ? 0.7 : 1 },
-            ]}
-          >
-            <Feather name="share" size={20} color={theme.text} />
-            <ThemedText type="small" style={styles.actionLabel}>
-              Share
-            </ThemedText>
-          </Pressable>
+            <Pressable
+              onPress={handlePlayPause}
+              style={({ pressed }) => [
+                styles.playButton,
+                {
+                  backgroundColor: theme.primary,
+                  transform: [{ scale: pressed ? 0.95 : 1 }],
+                },
+              ]}
+            >
+              <Feather
+                name={isPlaying ? "pause" : "play"}
+                size={22}
+                color="#FFFFFF"
+                style={isPlaying ? undefined : { marginLeft: 2 }}
+              />
+            </Pressable>
 
-          <Pressable
-            onPress={handleDelete}
-            style={({ pressed }) => [
-              styles.actionButton,
-              { backgroundColor: theme.backgroundDefault, opacity: pressed ? 0.7 : 1 },
-            ]}
-          >
-            <Feather name="trash-2" size={20} color={theme.error} />
-            <ThemedText type="small" style={[styles.actionLabel, { color: theme.error }]}>
-              Delete
-            </ThemedText>
-          </Pressable>
+            <Pressable
+              onPress={() => handleSkip(15)}
+              style={({ pressed }) => [styles.skipButton, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Feather name="rotate-cw" size={20} color={theme.text} />
+            </Pressable>
+          </View>
+
+          <View style={styles.rightActions}>
+            <Pressable
+              onPress={handleDelete}
+              style={({ pressed }) => [styles.smallButton, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Feather name="trash-2" size={18} color={theme.error} />
+            </Pressable>
+          </View>
         </View>
       </View>
     </ThemedView>
@@ -312,85 +400,108 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
+  waveformContainer: {
+    height: 80,
+    paddingHorizontal: Spacing.lg,
+    marginTop: Spacing.md,
+  },
+  lyricsContainer: {
     flex: 1,
     paddingHorizontal: Spacing.xl,
-    paddingTop: Spacing["4xl"],
+  },
+  lyricsContent: {
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.xl,
+  },
+  lyricText: {
+    fontSize: 22,
+    lineHeight: 36,
+    marginBottom: Spacing.lg,
+    fontWeight: "400",
+  },
+  lyricTextActive: {
+    fontSize: 26,
+    lineHeight: 40,
+    fontWeight: "600",
+  },
+  lyricTextPast: {
+    fontSize: 20,
+    lineHeight: 32,
+  },
+  lyricsBottomPadding: {
+    height: 100,
+  },
+  bottomBar: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xl,
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  sourcesPanel: {
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.sm,
+  },
+  sourcesTitle: {
+    fontWeight: "600",
+    marginBottom: Spacing.xs,
+  },
+  titleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: Spacing.xs,
   },
-  waveformContainer: {
-    width: "100%",
-    height: 120,
-    marginBottom: Spacing["2xl"],
+  titleText: {
+    flex: 1,
+    fontWeight: "600",
+    marginRight: Spacing.md,
   },
-  title: {
-    textAlign: "center",
-    marginBottom: Spacing["3xl"],
-  },
-  progressContainer: {
-    width: "100%",
-    marginBottom: Spacing["2xl"],
+  timeRow: {
+    flexDirection: "row",
   },
   slider: {
     width: "100%",
-    height: 40,
+    height: 28,
+    marginBottom: Spacing.xs,
   },
-  timeContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.xs,
-  },
-  controlsContainer: {
+  controlsRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing["3xl"],
-    marginBottom: Spacing["4xl"],
+    justifyContent: "space-between",
+  },
+  leftActions: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    width: 70,
+  },
+  rightActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    width: 70,
+  },
+  mainControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.lg,
+  },
+  smallButton: {
+    padding: Spacing.sm,
   },
   skipButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    width: 60,
-    height: 60,
-  },
-  skipLabel: {
-    position: "absolute",
-    fontSize: 10,
+    padding: Spacing.sm,
   },
   playButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
-  },
-  actionsContainer: {
-    flexDirection: "row",
-    gap: Spacing.xl,
-  },
-  actionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.full,
-  },
-  actionLabel: {
-    fontWeight: "500",
-  },
-  sourcesContainer: {
-    backgroundColor: "rgba(107, 76, 230, 0.1)",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    marginBottom: Spacing.xl,
-  },
-  sourcesLabel: {
-    fontWeight: "600",
-    marginBottom: Spacing.sm,
-  },
-  sourceItem: {
-    marginBottom: Spacing.xs,
-    lineHeight: 16,
   },
 });
