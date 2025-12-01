@@ -1,5 +1,5 @@
-import React from "react";
-import { StyleSheet, Pressable } from "react-native";
+import React, { ReactNode } from "react";
+import { StyleSheet, Pressable, ViewStyle, StyleProp } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -7,13 +7,14 @@ import Animated, {
   WithSpringConfig,
 } from "react-native-reanimated";
 
-import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
 interface CardProps {
-  elevation: number;
+  elevation?: number;
   onPress?: () => void;
+  children?: ReactNode;
+  style?: StyleProp<ViewStyle>;
 }
 
 const springConfig: WithSpringConfig = {
@@ -42,7 +43,7 @@ const getBackgroundColorForElevation = (
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export function Card({ elevation, onPress }: CardProps) {
+export function Card({ elevation = 1, onPress, children, style }: CardProps) {
   const { theme } = useTheme();
   const scale = useSharedValue(1);
 
@@ -70,28 +71,18 @@ export function Card({ elevation, onPress }: CardProps) {
         {
           backgroundColor: cardBackgroundColor,
         },
+        style,
         animatedStyle,
       ]}
     >
-      <ThemedText type="h4" style={styles.cardTitle}>
-        Card - Elevation {elevation}
-      </ThemedText>
-      <ThemedText type="small" style={styles.cardDescription}>
-        This card has an elevation of {elevation}
-      </ThemedText>
+      {children}
     </AnimatedPressable>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    padding: Spacing.xl,
-    borderRadius: BorderRadius["2xl"],
-  },
-  cardTitle: {
-    marginBottom: Spacing.sm,
-  },
-  cardDescription: {
-    opacity: 0.7,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.md,
   },
 });

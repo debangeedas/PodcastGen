@@ -1,0 +1,241 @@
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  StyleSheet,
+  View,
+  TextInput,
+  Pressable,
+  Alert,
+} from "react-native";
+import { Feather } from "@expo/vector-icons";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import * as Haptics from "expo-haptics";
+
+import { ScreenKeyboardAwareScrollView } from "@/components/ScreenKeyboardAwareScrollView";
+import { ThemedText } from "@/components/ThemedText";
+import { Button } from "@/components/Button";
+import { useTheme } from "@/hooks/useTheme";
+import { Spacing, BorderRadius, Typography } from "@/constants/theme";
+import Spacer from "@/components/Spacer";
+import { CreateStackParamList } from "@/navigation/CreateStackNavigator";
+import {
+  getRecentSearches,
+  deleteRecentSearch,
+} from "@/utils/storage";
+
+type CreateScreenProps = {
+  navigation: NativeStackNavigationProp<CreateStackParamList, "Create">;
+};
+
+const QUICK_TOPICS = [
+  "Artificial Intelligence",
+  "Climate Change",
+  "Space Exploration",
+  "Mental Health",
+  "Cryptocurrency",
+];
+
+export default function CreateScreen({ navigation }: CreateScreenProps) {
+  const { theme, isDark } = useTheme();
+  const [topic, setTopic] = useState("");
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+
+  const loadRecentSearches = useCallback(async () => {
+    const searches = await getRecentSearches();
+    setRecentSearches(searches);
+  }, []);
+
+  useEffect(() => {
+    loadRecentSearches();
+    const unsubscribe = navigation.addListener("focus", loadRecentSearches);
+    return unsubscribe;
+  }, [navigation, loadRecentSearches]);
+
+  const handleGenerate = async () => {
+    if (!topic.trim()) {
+      Alert.alert("Enter a topic", "Please enter what you want to learn about.");
+      return;
+    }
+
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    navigation.navigate("Generating", { topic: topic.trim() });
+  };
+
+  const handleQuickTopic = async (quickTopic: string) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTopic(quickTopic);
+  };
+
+  const handleRecentSearch = async (search: string) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTopic(search);
+  };
+
+  const handleDeleteRecentSearch = async (search: string) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await deleteRecentSearch(search);
+    loadRecentSearches();
+  };
+
+  return (
+    <ScreenKeyboardAwareScrollView>
+      <Spacer height={Spacing.lg} />
+
+      <ThemedText type="h1" style={styles.heading}>
+        Create a Podcast
+      </ThemedText>
+      <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
+        Enter any topic and we will generate an engaging podcast episode for you.
+      </ThemedText>
+
+      <Spacer height={Spacing["2xl"]} />
+
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={[
+            styles.input,
+            {
+              backgroundColor: theme.backgroundDefault,
+              color: theme.text,
+            },
+          ]}
+          value={topic}
+          onChangeText={setTopic}
+          placeholder="What would you like to learn about?"
+          placeholderTextColor={theme.textSecondary}
+          multiline
+          numberOfLines={3}
+          textAlignVertical="top"
+          returnKeyType="default"
+        />
+      </View>
+
+      <Spacer height={Spacing.lg} />
+
+      <Button onPress={handleGenerate} disabled={!topic.trim()}>
+        Generate Podcast
+      </Button>
+
+      <Spacer height={Spacing["3xl"]} />
+
+      <ThemedText type="h4" style={styles.sectionTitle}>
+        Quick Topics
+      </ThemedText>
+      <Spacer height={Spacing.md} />
+      <View style={styles.chipsContainer}>
+        {QUICK_TOPICS.map((quickTopic) => (
+          <Pressable
+            key={quickTopic}
+            onPress={() => handleQuickTopic(quickTopic)}
+            style={({ pressed }) => [
+              styles.chip,
+              {
+                backgroundColor: theme.backgroundDefault,
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+          >
+            <ThemedText type="small">{quickTopic}</ThemedText>
+          </Pressable>
+        ))}
+      </View>
+
+      {recentSearches.length > 0 ? (
+        <>
+          <Spacer height={Spacing["3xl"]} />
+          <ThemedText type="h4" style={styles.sectionTitle}>
+            Recent Searches
+          </ThemedText>
+          <Spacer height={Spacing.md} />
+          {recentSearches.map((search) => (
+            <Pressable
+              key={search}
+              onPress={() => handleRecentSearch(search)}
+              style={({ pressed }) => [
+                styles.recentItem,
+                {
+                  backgroundColor: theme.backgroundDefault,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <View style={styles.recentContent}>
+                <Feather
+                  name="clock"
+                  size={16}
+                  color={theme.textSecondary}
+                  style={styles.recentIcon}
+                />
+                <ThemedText type="body" numberOfLines={1} style={styles.recentText}>
+                  {search}
+                </ThemedText>
+              </View>
+              <Pressable
+                onPress={() => handleDeleteRecentSearch(search)}
+                hitSlop={12}
+                style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}
+              >
+                <Feather name="x" size={18} color={theme.textSecondary} />
+              </Pressable>
+            </Pressable>
+          ))}
+        </>
+      ) : null}
+
+      <Spacer height={Spacing["4xl"]} />
+    </ScreenKeyboardAwareScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  heading: {
+    textAlign: "center",
+  },
+  subtitle: {
+    textAlign: "center",
+    marginTop: Spacing.sm,
+  },
+  inputContainer: {
+    width: "100%",
+  },
+  input: {
+    minHeight: 100,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.lg,
+    fontSize: Typography.body.fontSize,
+    textAlignVertical: "top",
+  },
+  sectionTitle: {
+    marginBottom: Spacing.xs,
+  },
+  chipsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+  },
+  chip: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+  },
+  recentItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    marginBottom: Spacing.sm,
+  },
+  recentContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  recentIcon: {
+    marginRight: Spacing.sm,
+  },
+  recentText: {
+    flex: 1,
+  },
+});
