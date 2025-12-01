@@ -11,6 +11,20 @@ export interface Podcast {
   category?: string;
   isFavorite?: boolean;
   voiceUsed?: string;
+  seriesId?: string;
+  episodeNumber?: number;
+  episodeTitle?: string;
+}
+
+export interface PodcastSeries {
+  id: string;
+  topic: string;
+  description: string;
+  episodeCount: number;
+  totalDuration: number;
+  createdAt: string;
+  coverColor: string;
+  isFavorite?: boolean;
 }
 
 export interface UserSettings {
@@ -23,6 +37,7 @@ export interface UserSettings {
 }
 
 const PODCASTS_KEY = "@podcasts";
+const SERIES_KEY = "@series";
 const SETTINGS_KEY = "@settings";
 const RECENT_SEARCHES_KEY = "@recent_searches";
 
@@ -41,6 +56,28 @@ export async function getPodcasts(): Promise<Podcast[]> {
     return data ? JSON.parse(data) : [];
   } catch (error) {
     console.error("Error getting podcasts:", error);
+    return [];
+  }
+}
+
+export async function getStandalonePodcasts(): Promise<Podcast[]> {
+  try {
+    const podcasts = await getPodcasts();
+    return podcasts.filter((p) => !p.seriesId);
+  } catch (error) {
+    console.error("Error getting standalone podcasts:", error);
+    return [];
+  }
+}
+
+export async function getSeriesEpisodes(seriesId: string): Promise<Podcast[]> {
+  try {
+    const podcasts = await getPodcasts();
+    return podcasts
+      .filter((p) => p.seriesId === seriesId)
+      .sort((a, b) => (a.episodeNumber || 0) - (b.episodeNumber || 0));
+  } catch (error) {
+    console.error("Error getting series episodes:", error);
     return [];
   }
 }
@@ -115,6 +152,71 @@ export async function updatePodcastCategory(
   }
 }
 
+export async function getSeries(): Promise<PodcastSeries[]> {
+  try {
+    const data = await AsyncStorage.getItem(SERIES_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (error) {
+    console.error("Error getting series:", error);
+    return [];
+  }
+}
+
+export async function getSeriesById(seriesId: string): Promise<PodcastSeries | null> {
+  try {
+    const series = await getSeries();
+    return series.find((s) => s.id === seriesId) || null;
+  } catch (error) {
+    console.error("Error getting series:", error);
+    return null;
+  }
+}
+
+export async function saveSeries(series: PodcastSeries): Promise<void> {
+  try {
+    const allSeries = await getSeries();
+    const existingIndex = allSeries.findIndex((s) => s.id === series.id);
+    if (existingIndex >= 0) {
+      allSeries[existingIndex] = series;
+    } else {
+      allSeries.unshift(series);
+    }
+    await AsyncStorage.setItem(SERIES_KEY, JSON.stringify(allSeries));
+  } catch (error) {
+    console.error("Error saving series:", error);
+    throw error;
+  }
+}
+
+export async function deleteSeries(seriesId: string): Promise<void> {
+  try {
+    const allSeries = await getSeries();
+    const filtered = allSeries.filter((s) => s.id !== seriesId);
+    await AsyncStorage.setItem(SERIES_KEY, JSON.stringify(filtered));
+    
+    const podcasts = await getPodcasts();
+    const filteredPodcasts = podcasts.filter((p) => p.seriesId !== seriesId);
+    await AsyncStorage.setItem(PODCASTS_KEY, JSON.stringify(filteredPodcasts));
+  } catch (error) {
+    console.error("Error deleting series:", error);
+    throw error;
+  }
+}
+
+export async function toggleSeriesFavorite(seriesId: string): Promise<void> {
+  try {
+    const allSeries = await getSeries();
+    const series = allSeries.find((s) => s.id === seriesId);
+    if (series) {
+      series.isFavorite = !series.isFavorite;
+      await AsyncStorage.setItem(SERIES_KEY, JSON.stringify(allSeries));
+    }
+  } catch (error) {
+    console.error("Error toggling series favorite:", error);
+    throw error;
+  }
+}
+
 export async function getSettings(): Promise<UserSettings> {
   try {
     const data = await AsyncStorage.getItem(SETTINGS_KEY);
@@ -170,6 +272,7 @@ export async function clearAllData(): Promise<void> {
   try {
     await AsyncStorage.multiRemove([
       PODCASTS_KEY,
+      SERIES_KEY,
       SETTINGS_KEY,
       RECENT_SEARCHES_KEY,
     ]);
