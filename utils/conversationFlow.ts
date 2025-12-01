@@ -49,8 +49,8 @@ export interface ConversationState {
 
 const TEST_FOLLOW_UP_RESPONSES: Record<number, { content: string; quickReplies: string[] }> = {
   0: {
-    content: "I'd love to help you explore this topic! To create the perfect podcast for you, I have a quick question:\n\nAre you looking for a focused deep-dive on a specific aspect, or would you prefer a broader overview covering multiple angles?",
-    quickReplies: ["Specific deep-dive", "Broad overview", "I'm not sure yet"],
+    content: "I'd love to help you explore this topic! What format works best for you?\n\nWould you like a single focused episode, or a multi-part series that covers different aspects?",
+    quickReplies: ["Single episode", "Multi-part series", "I'm not sure yet"],
   },
   1: {
     content: "Got it! And how much time do you have? Would you prefer:\n\nA quick 5-minute summary, a standard 10-15 minute episode, or a comprehensive deep-dive that really explores the nuances?",
@@ -155,9 +155,9 @@ function parseUserResponse(
   const lowerResponse = response.toLowerCase();
   
   if (questionNumber === 0) {
-    if (lowerResponse.includes("specific") || lowerResponse.includes("deep-dive") || lowerResponse.includes("focused")) {
+    if (lowerResponse.includes("single") || lowerResponse.includes("one episode") || lowerResponse.includes("focused")) {
       return { specificity: "specific", format: "single" };
-    } else if (lowerResponse.includes("broad") || lowerResponse.includes("overview") || lowerResponse.includes("multiple")) {
+    } else if (lowerResponse.includes("multi") || lowerResponse.includes("series") || lowerResponse.includes("multiple")) {
       return { specificity: "broad", format: "series" };
     }
     return { specificity: "general" };
