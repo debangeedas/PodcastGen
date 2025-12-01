@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import CreateScreen from "@/screens/CreateScreen";
 import GeneratingScreen from "@/screens/GeneratingScreen";
 import PlayerScreen from "@/screens/PlayerScreen";
+import SeriesDetailScreen from "@/screens/SeriesDetailScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
 import { useTheme } from "@/hooks/useTheme";
 import { getCommonScreenOptions } from "@/navigation/screenOptions";
@@ -47,6 +48,13 @@ export default function CreateStackNavigator() {
         options={{
           headerTitle: "",
           presentation: "modal",
+        }}
+      />
+      <Stack.Screen
+        name="SeriesDetail"
+        component={SeriesDetailScreen}
+        options={{
+          headerTitle: "Series",
         }}
       />
     </Stack.Navigator>

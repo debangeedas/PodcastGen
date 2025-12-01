@@ -1,17 +1,27 @@
 import React, { useState, useCallback } from "react";
-import { StyleSheet, View, Pressable, Alert, RefreshControl } from "react-native";
+import { StyleSheet, View, Pressable, Alert, RefreshControl, SectionList } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 
-import { ScreenFlatList } from "@/components/ScreenFlatList";
+import { ScreenScrollView } from "@/components/ScreenScrollView";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { LibraryStackParamList } from "@/navigation/LibraryStackNavigator";
-import { Podcast, getPodcasts, deletePodcast, toggleFavorite } from "@/utils/storage";
+import {
+  Podcast,
+  PodcastSeries,
+  getStandalonePodcasts,
+  getSeries,
+  deletePodcast,
+  deleteSeries,
+  toggleFavorite,
+  toggleSeriesFavorite,
+  getSeriesEpisodes,
+} from "@/utils/storage";
 import { formatDuration } from "@/utils/podcastGenerator";
 import { WaveformPreview } from "@/components/WaveformPreview";
 
@@ -41,22 +51,27 @@ function EmptyState({ theme }: { theme: any }) {
 export default function LibraryScreen({ navigation }: LibraryScreenProps) {
   const { theme, isDark } = useTheme();
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
+  const [series, setSeries] = useState<PodcastSeries[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadPodcasts = useCallback(async () => {
-    const data = await getPodcasts();
-    setPodcasts(data);
+  const loadData = useCallback(async () => {
+    const [podcastData, seriesData] = await Promise.all([
+      getStandalonePodcasts(),
+      getSeries(),
+    ]);
+    setPodcasts(podcastData);
+    setSeries(seriesData);
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      loadPodcasts();
-    }, [loadPodcasts])
+      loadData();
+    }, [loadData])
   );
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadPodcasts();
+    await loadData();
     setRefreshing(false);
   };
 
@@ -65,7 +80,12 @@ export default function LibraryScreen({ navigation }: LibraryScreenProps) {
     navigation.navigate("Player", { podcastId: podcast.id });
   };
 
-  const handleDelete = async (podcast: Podcast) => {
+  const handleOpenSeries = async (seriesItem: PodcastSeries) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    navigation.navigate("SeriesDetail", { seriesId: seriesItem.id });
+  };
+
+  const handleDeletePodcast = async (podcast: Podcast) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       "Delete Podcast",
@@ -77,7 +97,27 @@ export default function LibraryScreen({ navigation }: LibraryScreenProps) {
           style: "destructive",
           onPress: async () => {
             await deletePodcast(podcast.id);
-            loadPodcasts();
+            loadData();
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteSeries = async (seriesItem: PodcastSeries) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert(
+      "Delete Series",
+      `Are you sure you want to delete "${seriesItem.topic}" and all its episodes?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await deleteSeries(seriesItem.id);
+            loadData();
             await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           },
         },
@@ -88,7 +128,13 @@ export default function LibraryScreen({ navigation }: LibraryScreenProps) {
   const handleToggleFavorite = async (podcast: Podcast) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await toggleFavorite(podcast.id);
-    loadPodcasts();
+    loadData();
+  };
+
+  const handleToggleSeriesFavorite = async (seriesItem: PodcastSeries) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await toggleSeriesFavorite(seriesItem.id);
+    loadData();
   };
 
   const formatDate = (dateString: string) => {
@@ -100,10 +146,75 @@ export default function LibraryScreen({ navigation }: LibraryScreenProps) {
     });
   };
 
-  const renderItem = ({ item }: { item: Podcast }) => (
+  const renderSeriesCard = (item: PodcastSeries) => (
     <Pressable
+      key={item.id}
+      onPress={() => handleOpenSeries(item)}
+      onLongPress={() => handleDeleteSeries(item)}
+      style={({ pressed }) => [
+        styles.seriesCard,
+        {
+          backgroundColor: theme.backgroundDefault,
+          opacity: pressed ? 0.9 : 1,
+          transform: [{ scale: pressed ? 0.98 : 1 }],
+          borderWidth: item.isFavorite ? 2 : 0,
+          borderColor: item.isFavorite ? theme.primary : "transparent",
+        },
+      ]}
+    >
+      <View style={[styles.seriesCover, { backgroundColor: item.coverColor }]}>
+        <Feather name="layers" size={28} color="#FFFFFF" />
+      </View>
+      <View style={styles.seriesInfo}>
+        <ThemedText type="h4" numberOfLines={2} style={styles.seriesTitle}>
+          {item.topic}
+        </ThemedText>
+        <ThemedText
+          type="caption"
+          numberOfLines={2}
+          style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
+        >
+          {item.description}
+        </ThemedText>
+        <View style={styles.seriesMeta}>
+          <View style={styles.metaItem}>
+            <Feather name="list" size={12} color={theme.textSecondary} />
+            <ThemedText type="caption" style={{ marginLeft: 4 }}>
+              {item.episodeCount} episodes
+            </ThemedText>
+          </View>
+          <View style={styles.metaItem}>
+            <Feather name="clock" size={12} color={theme.textSecondary} />
+            <ThemedText type="caption" style={{ marginLeft: 4 }}>
+              {formatDuration(item.totalDuration)}
+            </ThemedText>
+          </View>
+        </View>
+      </View>
+      <View style={styles.seriesActions}>
+        <Pressable
+          onPress={() => handleToggleSeriesFavorite(item)}
+          hitSlop={12}
+          style={({ pressed }) => [{ opacity: pressed ? 0.5 : 1 }]}
+        >
+          <Feather
+            name="heart"
+            size={18}
+            color={item.isFavorite ? theme.primary : theme.textSecondary}
+          />
+        </Pressable>
+        <View style={[styles.chevronButton, { backgroundColor: theme.primary }]}>
+          <Feather name="chevron-right" size={18} color="#FFFFFF" />
+        </View>
+      </View>
+    </Pressable>
+  );
+
+  const renderPodcastCard = (item: Podcast) => (
+    <Pressable
+      key={item.id}
       onPress={() => handlePlay(item)}
-      onLongPress={() => handleDelete(item)}
+      onLongPress={() => handleDeletePodcast(item)}
       style={({ pressed }) => [
         styles.podcastCard,
         {
@@ -121,11 +232,11 @@ export default function LibraryScreen({ navigation }: LibraryScreenProps) {
             <ThemedText type="h4" numberOfLines={2} style={styles.podcastTitle}>
               {item.topic}
             </ThemedText>
-            {item.category && (
+            {item.category ? (
               <ThemedText type="caption" style={{ color: theme.textSecondary, marginTop: Spacing.xs }}>
                 {item.category}
               </ThemedText>
-            )}
+            ) : null}
           </View>
           <View style={styles.headerButtons}>
             <Pressable
@@ -134,14 +245,13 @@ export default function LibraryScreen({ navigation }: LibraryScreenProps) {
               style={({ pressed }) => [{ opacity: pressed ? 0.5 : 1 }]}
             >
               <Feather
-                name={item.isFavorite ? "heart" : "heart"}
+                name="heart"
                 size={18}
                 color={item.isFavorite ? theme.primary : theme.textSecondary}
-                fill={item.isFavorite ? theme.primary : "none"}
               />
             </Pressable>
             <Pressable
-              onPress={() => handleDelete(item)}
+              onPress={() => handleDeletePodcast(item)}
               hitSlop={12}
               style={({ pressed }) => [
                 styles.deleteButton,
@@ -176,7 +286,9 @@ export default function LibraryScreen({ navigation }: LibraryScreenProps) {
     </Pressable>
   );
 
-  if (podcasts.length === 0) {
+  const isEmpty = podcasts.length === 0 && series.length === 0;
+
+  if (isEmpty) {
     return (
       <ThemedView style={styles.container}>
         <EmptyState theme={theme} />
@@ -185,10 +297,7 @@ export default function LibraryScreen({ navigation }: LibraryScreenProps) {
   }
 
   return (
-    <ScreenFlatList
-      data={podcasts}
-      renderItem={renderItem}
-      keyExtractor={(item) => item.id}
+    <ScreenScrollView
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -196,15 +305,47 @@ export default function LibraryScreen({ navigation }: LibraryScreenProps) {
           tintColor={theme.primary}
         />
       }
-      ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
-      showsVerticalScrollIndicator={false}
-    />
+    >
+      {series.length > 0 ? (
+        <View style={styles.section}>
+          <ThemedText type="h3" style={styles.sectionTitle}>
+            Series
+          </ThemedText>
+          <View style={styles.seriesList}>
+            {series.map(renderSeriesCard)}
+          </View>
+        </View>
+      ) : null}
+
+      {podcasts.length > 0 ? (
+        <View style={styles.section}>
+          <ThemedText type="h3" style={styles.sectionTitle}>
+            Episodes
+          </ThemedText>
+          <View style={styles.podcastList}>
+            {podcasts.map(renderPodcastCard)}
+          </View>
+        </View>
+      ) : null}
+    </ScreenScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  section: {
+    marginBottom: Spacing.xl,
+  },
+  sectionTitle: {
+    marginBottom: Spacing.md,
+  },
+  seriesList: {
+    gap: Spacing.md,
+  },
+  podcastList: {
+    gap: Spacing.md,
   },
   emptyContainer: {
     flex: 1,
@@ -227,6 +368,47 @@ const styles = StyleSheet.create({
   emptyMessage: {
     textAlign: "center",
     maxWidth: 280,
+  },
+  seriesCard: {
+    flexDirection: "row",
+    borderRadius: BorderRadius.md,
+    overflow: "hidden",
+    padding: Spacing.md,
+    alignItems: "center",
+  },
+  seriesCover: {
+    width: 64,
+    height: 64,
+    borderRadius: BorderRadius.sm,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  seriesInfo: {
+    flex: 1,
+    marginLeft: Spacing.md,
+  },
+  seriesTitle: {
+    marginBottom: 0,
+  },
+  seriesMeta: {
+    flexDirection: "row",
+    gap: Spacing.lg,
+    marginTop: Spacing.sm,
+  },
+  metaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  seriesActions: {
+    alignItems: "center",
+    gap: Spacing.md,
+  },
+  chevronButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
   },
   podcastCard: {
     borderRadius: BorderRadius.md,

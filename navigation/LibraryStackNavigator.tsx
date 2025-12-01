@@ -2,12 +2,14 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import LibraryScreen from "@/screens/LibraryScreen";
 import PlayerScreen from "@/screens/PlayerScreen";
+import SeriesDetailScreen from "@/screens/SeriesDetailScreen";
 import { useTheme } from "@/hooks/useTheme";
 import { getCommonScreenOptions } from "@/navigation/screenOptions";
 
 export type LibraryStackParamList = {
   Library: undefined;
   Player: { podcastId: string };
+  SeriesDetail: { seriesId: string };
 };
 
 const Stack = createNativeStackNavigator<LibraryStackParamList>();
@@ -34,6 +36,13 @@ export default function LibraryStackNavigator() {
         options={{
           headerTitle: "",
           presentation: "modal",
+        }}
+      />
+      <Stack.Screen
+        name="SeriesDetail"
+        component={SeriesDetailScreen}
+        options={{
+          headerTitle: "Series",
         }}
       />
     </Stack.Navigator>
