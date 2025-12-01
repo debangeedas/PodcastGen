@@ -13,19 +13,27 @@ import { Spacing, BorderRadius } from "@/constants/theme";
 import { CreateStackParamList } from "@/navigation/CreateStackNavigator";
 import {
   generatePodcast,
+  generatePodcastSeries,
   GenerationProgress,
 } from "@/utils/podcastGenerator";
-import { savePodcast, addRecentSearch, getSettings } from "@/utils/storage";
+import { savePodcast, saveSeries, addRecentSearch, getSettings } from "@/utils/storage";
 
 type GeneratingScreenProps = {
   navigation: NativeStackNavigationProp<CreateStackParamList, "Generating">;
   route: RouteProp<CreateStackParamList, "Generating">;
 };
 
-const STAGES = [
+const SINGLE_STAGES = [
   { key: "searching", label: "Searching credible sources" },
   { key: "analyzing", label: "Analyzing information" },
   { key: "generating", label: "Generating script" },
+  { key: "creating_audio", label: "Creating audio" },
+];
+
+const SERIES_STAGES = [
+  { key: "planning", label: "Planning episode structure" },
+  { key: "searching", label: "Researching episodes" },
+  { key: "generating", label: "Writing scripts" },
   { key: "creating_audio", label: "Creating audio" },
 ];
 
@@ -34,9 +42,9 @@ export default function GeneratingScreen({
   route,
 }: GeneratingScreenProps) {
   const { theme } = useTheme();
-  const { topic } = route.params;
+  const { topic, isSeries } = route.params;
   const [progress, setProgress] = useState<GenerationProgress>({
-    stage: "searching",
+    stage: isSeries ? "planning" : "searching",
     message: "Starting...",
     progress: 0,
   });
@@ -44,6 +52,8 @@ export default function GeneratingScreen({
   const [error, setError] = useState<string | null>(null);
   const spinValue = useRef(new Animated.Value(0)).current;
   const isMounted = useRef(true);
+
+  const stages = isSeries ? SERIES_STAGES : SINGLE_STAGES;
 
   useEffect(() => {
     isMounted.current = true;
@@ -70,19 +80,40 @@ export default function GeneratingScreen({
     const generate = async () => {
       try {
         const settings = await getSettings();
-        const podcast = await generatePodcast(topic, (prog) => {
-          if (isMounted.current) {
-            setProgress(prog);
+
+        if (isSeries) {
+          const result = await generatePodcastSeries(topic, (prog) => {
+            if (isMounted.current) {
+              setProgress(prog);
+            }
+          }, settings.preferredVoice);
+
+          await saveSeries(result.series);
+          for (const episode of result.episodes) {
+            await savePodcast(episode);
           }
-        }, settings.preferredVoice);
+          await addRecentSearch(topic);
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-        await savePodcast(podcast);
-        await addRecentSearch(topic);
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          if (isMounted.current) {
+            setIsGenerating(false);
+            navigation.replace("SeriesDetail", { seriesId: result.series.id });
+          }
+        } else {
+          const podcast = await generatePodcast(topic, (prog) => {
+            if (isMounted.current) {
+              setProgress(prog);
+            }
+          }, settings.preferredVoice);
 
-        if (isMounted.current) {
-          setIsGenerating(false);
-          navigation.replace("Player", { podcastId: podcast.id });
+          await savePodcast(podcast);
+          await addRecentSearch(topic);
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+          if (isMounted.current) {
+            setIsGenerating(false);
+            navigation.replace("Player", { podcastId: podcast.id });
+          }
         }
       } catch (err) {
         console.error("Generation error:", err);
@@ -95,7 +126,7 @@ export default function GeneratingScreen({
     };
 
     generate();
-  }, [topic, navigation]);
+  }, [topic, isSeries, navigation]);
 
   const handleCancel = () => {
     Alert.alert(
@@ -115,7 +146,7 @@ export default function GeneratingScreen({
   const handleRetry = () => {
     setError(null);
     setIsGenerating(true);
-    setProgress({ stage: "searching", message: "Starting...", progress: 0 });
+    setProgress({ stage: isSeries ? "planning" : "searching", message: "Starting...", progress: 0 });
   };
 
   const spinRotation = spinValue.interpolate({
@@ -124,7 +155,7 @@ export default function GeneratingScreen({
   });
 
   const getCurrentStageIndex = () => {
-    return STAGES.findIndex((s) => s.key === progress.stage);
+    return stages.findIndex((s) => s.key === progress.stage);
   };
 
   if (error) {
@@ -165,7 +196,7 @@ export default function GeneratingScreen({
         </Animated.View>
 
         <ThemedText type="h3" style={styles.title}>
-          Creating Your Podcast
+          {isSeries ? "Creating Your Series" : "Creating Your Podcast"}
         </ThemedText>
 
         <ThemedText
@@ -176,8 +207,16 @@ export default function GeneratingScreen({
           {topic}
         </ThemedText>
 
+        {isSeries && progress.episodeNumber ? (
+          <View style={[styles.episodeBadge, { backgroundColor: theme.primary + "20" }]}>
+            <ThemedText style={[styles.episodeBadgeText, { color: theme.primary }]}>
+              Episode {progress.episodeNumber} of {progress.totalEpisodes}
+            </ThemedText>
+          </View>
+        ) : null}
+
         <View style={styles.stagesContainer}>
-          {STAGES.map((stage, index) => {
+          {stages.map((stage, index) => {
             const currentIndex = getCurrentStageIndex();
             const isComplete = index < currentIndex;
             const isCurrent = index === currentIndex;
@@ -284,6 +323,16 @@ const styles = StyleSheet.create({
   message: {
     marginTop: Spacing.md,
     textAlign: "center",
+  },
+  episodeBadge: {
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+  },
+  episodeBadgeText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   stagesContainer: {
     width: "100%",

@@ -9,8 +9,9 @@ import { getCommonScreenOptions } from "@/navigation/screenOptions";
 
 export type CreateStackParamList = {
   Create: undefined;
-  Generating: { topic: string };
+  Generating: { topic: string; isSeries?: boolean };
   Player: { podcastId: string };
+  SeriesDetail: { seriesId: string };
 };
 
 const Stack = createNativeStackNavigator<CreateStackParamList>();
