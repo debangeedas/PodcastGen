@@ -30,6 +30,15 @@ const QUALITY_OPTIONS = [
   { value: "premium" as const, label: "Premium" },
 ];
 
+const VOICE_OPTIONS = [
+  { value: "onyx" as const, label: "Onyx (Deep)" },
+  { value: "alloy" as const, label: "Alloy (Friendly)" },
+  { value: "echo" as const, label: "Echo (Warm)" },
+  { value: "fable" as const, label: "Fable (Storyteller)" },
+  { value: "nova" as const, label: "Nova (Energetic)" },
+  { value: "shimmer" as const, label: "Shimmer (Clear)" },
+];
+
 export default function ProfileScreen() {
   const { theme, isDark } = useTheme();
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
@@ -137,6 +146,50 @@ export default function ProfileScreen() {
           autoCapitalize="words"
           returnKeyType="done"
         />
+      </View>
+
+      <Spacer height={Spacing["3xl"]} />
+
+      <ThemedText type="h4" style={styles.sectionTitle}>
+        Voice Settings
+      </ThemedText>
+      <Spacer height={Spacing.md} />
+
+      <View style={[styles.settingCard, { backgroundColor: theme.backgroundDefault }]}>
+        <ThemedText type="body" style={{ marginBottom: Spacing.md }}>
+          Narrator Voice
+        </ThemedText>
+        <View style={styles.voiceOptions}>
+          {VOICE_OPTIONS.map((option) => (
+            <Pressable
+              key={option.value}
+              onPress={() => updateSetting("preferredVoice", option.value)}
+              style={[
+                styles.voiceOption,
+                {
+                  backgroundColor:
+                    settings.preferredVoice === option.value
+                      ? theme.primary
+                      : theme.backgroundSecondary,
+                  borderWidth: settings.preferredVoice === option.value ? 0 : 1,
+                  borderColor: theme.primary,
+                },
+              ]}
+            >
+              <ThemedText
+                type="small"
+                style={{
+                  color:
+                    settings.preferredVoice === option.value ? "#FFFFFF" : theme.text,
+                  fontWeight: settings.preferredVoice === option.value ? "600" : "400",
+                }}
+                numberOfLines={1}
+              >
+                {option.label}
+              </ThemedText>
+            </Pressable>
+          ))}
+        </View>
       </View>
 
       <Spacer height={Spacing["3xl"]} />
@@ -307,5 +360,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: Spacing.lg,
     borderRadius: BorderRadius.md,
+  },
+  voiceOptions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+  },
+  voiceOption: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    minWidth: "30%",
+    alignItems: "center",
   },
 });

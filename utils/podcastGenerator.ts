@@ -183,7 +183,8 @@ Transform this research into a captivating podcast episode. Make it sound natura
 
 async function generateAudio(
   script: string,
-  podcastId: string
+  podcastId: string,
+  voice: string = "onyx"
 ): Promise<{ uri: string; duration: number }> {
   if (!OPENAI_API_KEY) {
     throw new Error("OpenAI API key is not configured");
@@ -199,7 +200,7 @@ async function generateAudio(
       body: JSON.stringify({
         model: "tts-1-hd",
         input: script,
-        voice: "onyx",
+        voice: voice,
         response_format: "mp3",
       }),
     });
@@ -244,7 +245,8 @@ async function generateAudio(
 
 export async function generatePodcast(
   topic: string,
-  onProgress: ProgressCallback
+  onProgress: ProgressCallback,
+  voice: string = "onyx"
 ): Promise<Podcast> {
   const podcastId = `podcast_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -279,7 +281,7 @@ export async function generatePodcast(
       progress: 0.7,
     });
 
-    const { uri, duration } = await generateAudio(script, podcastId);
+    const { uri, duration } = await generateAudio(script, podcastId, voice);
 
     onProgress({
       stage: "done",
@@ -295,6 +297,8 @@ export async function generatePodcast(
       duration,
       createdAt: new Date().toISOString(),
       sources: research.sources,
+      isFavorite: false,
+      voiceUsed: voice,
     };
 
     return podcast;

@@ -8,6 +8,9 @@ export interface Podcast {
   duration: number;
   createdAt: string;
   sources: string[];
+  category?: string;
+  isFavorite?: boolean;
+  voiceUsed?: string;
 }
 
 export interface UserSettings {
@@ -15,6 +18,8 @@ export interface UserSettings {
   avatarIndex: number;
   audioQuality: "standard" | "high" | "premium";
   autoSave: boolean;
+  preferredVoice: "onyx" | "alloy" | "echo" | "fable" | "nova" | "shimmer";
+  voiceSpeed: number;
 }
 
 const PODCASTS_KEY = "@podcasts";
@@ -26,6 +31,8 @@ export const defaultSettings: UserSettings = {
   avatarIndex: 0,
   audioQuality: "high",
   autoSave: true,
+  preferredVoice: "onyx",
+  voiceSpeed: 1,
 };
 
 export async function getPodcasts(): Promise<Podcast[]> {
@@ -74,6 +81,37 @@ export async function getPodcastById(
   } catch (error) {
     console.error("Error getting podcast:", error);
     return null;
+  }
+}
+
+export async function toggleFavorite(podcastId: string): Promise<void> {
+  try {
+    const podcasts = await getPodcasts();
+    const podcast = podcasts.find((p) => p.id === podcastId);
+    if (podcast) {
+      podcast.isFavorite = !podcast.isFavorite;
+      await AsyncStorage.setItem(PODCASTS_KEY, JSON.stringify(podcasts));
+    }
+  } catch (error) {
+    console.error("Error toggling favorite:", error);
+    throw error;
+  }
+}
+
+export async function updatePodcastCategory(
+  podcastId: string,
+  category: string
+): Promise<void> {
+  try {
+    const podcasts = await getPodcasts();
+    const podcast = podcasts.find((p) => p.id === podcastId);
+    if (podcast) {
+      podcast.category = category;
+      await AsyncStorage.setItem(PODCASTS_KEY, JSON.stringify(podcasts));
+    }
+  } catch (error) {
+    console.error("Error updating category:", error);
+    throw error;
   }
 }
 

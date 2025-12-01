@@ -11,7 +11,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { LibraryStackParamList } from "@/navigation/LibraryStackNavigator";
-import { Podcast, getPodcasts, deletePodcast } from "@/utils/storage";
+import { Podcast, getPodcasts, deletePodcast, toggleFavorite } from "@/utils/storage";
 import { formatDuration } from "@/utils/podcastGenerator";
 import { WaveformPreview } from "@/components/WaveformPreview";
 
@@ -85,6 +85,12 @@ export default function LibraryScreen({ navigation }: LibraryScreenProps) {
     );
   };
 
+  const handleToggleFavorite = async (podcast: Podcast) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await toggleFavorite(podcast.id);
+    loadPodcasts();
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString(undefined, {
@@ -104,24 +110,47 @@ export default function LibraryScreen({ navigation }: LibraryScreenProps) {
           backgroundColor: theme.backgroundDefault,
           opacity: pressed ? 0.9 : 1,
           transform: [{ scale: pressed ? 0.98 : 1 }],
+          borderWidth: item.isFavorite ? 2 : 0,
+          borderColor: item.isFavorite ? theme.primary : "transparent",
         },
       ]}
     >
       <View style={styles.cardContent}>
         <View style={styles.cardHeader}>
-          <ThemedText type="h4" numberOfLines={2} style={styles.podcastTitle}>
-            {item.topic}
-          </ThemedText>
-          <Pressable
-            onPress={() => handleDelete(item)}
-            hitSlop={12}
-            style={({ pressed }) => [
-              styles.deleteButton,
-              { opacity: pressed ? 0.5 : 1 },
-            ]}
-          >
-            <Feather name="trash-2" size={18} color={theme.textSecondary} />
-          </Pressable>
+          <View style={{ flex: 1 }}>
+            <ThemedText type="h4" numberOfLines={2} style={styles.podcastTitle}>
+              {item.topic}
+            </ThemedText>
+            {item.category && (
+              <ThemedText type="caption" style={{ color: theme.textSecondary, marginTop: Spacing.xs }}>
+                {item.category}
+              </ThemedText>
+            )}
+          </View>
+          <View style={styles.headerButtons}>
+            <Pressable
+              onPress={() => handleToggleFavorite(item)}
+              hitSlop={12}
+              style={({ pressed }) => [{ opacity: pressed ? 0.5 : 1 }]}
+            >
+              <Feather
+                name={item.isFavorite ? "heart" : "heart"}
+                size={18}
+                color={item.isFavorite ? theme.primary : theme.textSecondary}
+                fill={item.isFavorite ? theme.primary : "none"}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() => handleDelete(item)}
+              hitSlop={12}
+              style={({ pressed }) => [
+                styles.deleteButton,
+                { opacity: pressed ? 0.5 : 1 },
+              ]}
+            >
+              <Feather name="trash-2" size={18} color={theme.textSecondary} />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.waveformContainer}>
@@ -212,11 +241,15 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   podcastTitle: {
-    flex: 1,
-    marginRight: Spacing.md,
+    marginBottom: Spacing.xs,
   },
   deleteButton: {
     padding: Spacing.xs,
+    marginLeft: Spacing.sm,
+  },
+  headerButtons: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   waveformContainer: {
     height: 40,

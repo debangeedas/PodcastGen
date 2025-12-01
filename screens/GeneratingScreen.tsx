@@ -15,7 +15,7 @@ import {
   generatePodcast,
   GenerationProgress,
 } from "@/utils/podcastGenerator";
-import { savePodcast, addRecentSearch } from "@/utils/storage";
+import { savePodcast, addRecentSearch, getSettings } from "@/utils/storage";
 
 type GeneratingScreenProps = {
   navigation: NativeStackNavigationProp<CreateStackParamList, "Generating">;
@@ -69,11 +69,12 @@ export default function GeneratingScreen({
   useEffect(() => {
     const generate = async () => {
       try {
+        const settings = await getSettings();
         const podcast = await generatePodcast(topic, (prog) => {
           if (isMounted.current) {
             setProgress(prog);
           }
-        });
+        }, settings.preferredVoice);
 
         await savePodcast(podcast);
         await addRecentSearch(topic);

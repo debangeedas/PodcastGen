@@ -191,6 +191,24 @@ export default function PlayerScreen({ navigation, route }: PlayerScreenProps) {
           {podcast.topic}
         </ThemedText>
 
+        {podcast.sources && podcast.sources.length > 0 && (
+          <View style={styles.sourcesContainer}>
+            <ThemedText type="small" style={styles.sourcesLabel}>
+              Sources:
+            </ThemedText>
+            {podcast.sources.map((source, index) => (
+              <ThemedText
+                key={index}
+                type="caption"
+                style={[styles.sourceItem, { color: theme.textSecondary }]}
+                numberOfLines={2}
+              >
+                • {source}
+              </ThemedText>
+            ))}
+          </View>
+        )}
+
         <View style={styles.progressContainer}>
           <Slider
             style={styles.slider}
@@ -360,5 +378,19 @@ const styles = StyleSheet.create({
   },
   actionLabel: {
     fontWeight: "500",
+  },
+  sourcesContainer: {
+    backgroundColor: "rgba(107, 76, 230, 0.1)",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.xl,
+  },
+  sourcesLabel: {
+    fontWeight: "600",
+    marginBottom: Spacing.sm,
+  },
+  sourceItem: {
+    marginBottom: Spacing.xs,
+    lineHeight: 16,
   },
 });
