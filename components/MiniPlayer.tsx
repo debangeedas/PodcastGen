@@ -32,6 +32,12 @@ export default function MiniPlayer({ isOnPlayScreen = false }: MiniPlayerProps) 
     }
   }, [currentPodcast?.id]);
 
+  useEffect(() => {
+    if (isPlaying) {
+      setIsDismissed(false);
+    }
+  }, [isPlaying]);
+
   if (!currentPodcast || isDismissed || isOnPlayScreen) {
     return null;
   }
