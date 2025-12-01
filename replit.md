@@ -82,10 +82,10 @@ npm run dev
 - Or access web version at http://localhost:8081
 
 ## Recent Changes
-- Added conversational AI interface with ChatCreationScreen
-- AI asks 2-4 follow-up questions to clarify topic scope, depth, and style
-- Episode plan approval workflow for series (Approve/Modify/Single options)
+- Unified conversation flow for both single episodes and series
+- Removed toggle from Create screen - AI determines format through conversation
+- AI asks 3 questions: scope (specific vs broad), depth, and style
+- Choosing "Broad overview" triggers series flow with episode plan approval
+- Choosing "Specific deep-dive" triggers single episode generation
 - Quick-reply chips for fast topic refinement
 - Extended data models to store style and depth metadata
-- Create screen now navigates to chat interface instead of direct generation
-- Generation flow uses conversation-derived parameters (style, depth, approved outline)

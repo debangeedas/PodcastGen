@@ -26,26 +26,18 @@ type CreateScreenProps = {
   navigation: NativeStackNavigationProp<CreateStackParamList, "Create">;
 };
 
-type PodcastType = "single" | "series";
-
-const QUICK_TOPICS_SINGLE = [
+const QUICK_TOPICS = [
   "What is quantum computing?",
+  "The French Revolution",
   "How does photosynthesis work?",
-  "Explain blockchain technology",
-];
-
-const QUICK_TOPICS_SERIES = [
-  "The European Renaissance",
   "History of Ancient Rome",
-  "Artificial Intelligence",
-  "Climate Science",
-  "World War II",
+  "Explain blockchain technology",
+  "The Renaissance Era",
 ];
 
 export default function CreateScreen({ navigation }: CreateScreenProps) {
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
   const [topic, setTopic] = useState("");
-  const [podcastType, setPodcastType] = useState<PodcastType>("single");
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
   const loadRecentSearches = useCallback(async () => {
@@ -68,7 +60,6 @@ export default function CreateScreen({ navigation }: CreateScreenProps) {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     navigation.navigate("ChatCreation", { 
       topic: topic.trim(),
-      forceSeries: podcastType === "series",
     });
   };
 
@@ -88,13 +79,6 @@ export default function CreateScreen({ navigation }: CreateScreenProps) {
     loadRecentSearches();
   };
 
-  const handleToggleType = async (type: PodcastType) => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setPodcastType(type);
-  };
-
-  const quickTopics = podcastType === "single" ? QUICK_TOPICS_SINGLE : QUICK_TOPICS_SERIES;
-
   return (
     <ScreenKeyboardAwareScrollView>
       <Spacer height={Spacing.lg} />
@@ -103,59 +87,8 @@ export default function CreateScreen({ navigation }: CreateScreenProps) {
         Create a Podcast
       </ThemedText>
       <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
-        {podcastType === "single"
-          ? "Enter a specific topic for a single focused episode."
-          : "Enter a broad topic to generate a multi-episode series."}
+        Enter any topic and I'll help you create the perfect podcast.
       </ThemedText>
-
-      <Spacer height={Spacing.xl} />
-
-      <View style={[styles.typeToggle, { backgroundColor: theme.backgroundDefault }]}>
-        <Pressable
-          onPress={() => handleToggleType("single")}
-          style={[
-            styles.typeOption,
-            podcastType === "single" && { backgroundColor: theme.primary },
-          ]}
-        >
-          <Feather
-            name="mic"
-            size={18}
-            color={podcastType === "single" ? "#FFFFFF" : theme.textSecondary}
-            style={styles.typeIcon}
-          />
-          <ThemedText
-            style={[
-              styles.typeText,
-              { color: podcastType === "single" ? "#FFFFFF" : theme.textSecondary },
-            ]}
-          >
-            Single Episode
-          </ThemedText>
-        </Pressable>
-        <Pressable
-          onPress={() => handleToggleType("series")}
-          style={[
-            styles.typeOption,
-            podcastType === "series" && { backgroundColor: theme.primary },
-          ]}
-        >
-          <Feather
-            name="layers"
-            size={18}
-            color={podcastType === "series" ? "#FFFFFF" : theme.textSecondary}
-            style={styles.typeIcon}
-          />
-          <ThemedText
-            style={[
-              styles.typeText,
-              { color: podcastType === "series" ? "#FFFFFF" : theme.textSecondary },
-            ]}
-          >
-            Series
-          </ThemedText>
-        </Pressable>
-      </View>
 
       <Spacer height={Spacing.xl} />
 
@@ -170,11 +103,7 @@ export default function CreateScreen({ navigation }: CreateScreenProps) {
           ]}
           value={topic}
           onChangeText={setTopic}
-          placeholder={
-            podcastType === "single"
-              ? "e.g., How do black holes form?"
-              : "e.g., The European Renaissance"
-          }
+          placeholder="e.g., The history of jazz music"
           placeholderTextColor={theme.textSecondary}
           multiline
           numberOfLines={3}
@@ -182,15 +111,6 @@ export default function CreateScreen({ navigation }: CreateScreenProps) {
           returnKeyType="default"
         />
       </View>
-
-      {podcastType === "series" ? (
-        <View style={[styles.seriesInfo, { backgroundColor: theme.backgroundDefault }]}>
-          <Feather name="info" size={16} color={theme.primary} />
-          <ThemedText style={[styles.seriesInfoText, { color: theme.textSecondary }]}>
-            A series will generate 3-5 episodes covering different aspects of your topic.
-          </ThemedText>
-        </View>
-      ) : null}
 
       <Spacer height={Spacing.lg} />
 
@@ -201,11 +121,11 @@ export default function CreateScreen({ navigation }: CreateScreenProps) {
       <Spacer height={Spacing["3xl"]} />
 
       <ThemedText type="h4" style={styles.sectionTitle}>
-        {podcastType === "single" ? "Quick Topics" : "Series Ideas"}
+        Topic Ideas
       </ThemedText>
       <Spacer height={Spacing.md} />
       <View style={styles.chipsContainer}>
-        {quickTopics.map((quickTopic) => (
+        {QUICK_TOPICS.map((quickTopic) => (
           <Pressable
             key={quickTopic}
             onPress={() => handleQuickTopic(quickTopic)}
@@ -277,26 +197,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: Spacing.sm,
   },
-  typeToggle: {
-    flexDirection: "row",
-    borderRadius: BorderRadius.md,
-    padding: 4,
-  },
-  typeOption: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.sm,
-  },
-  typeIcon: {
-    marginRight: Spacing.xs,
-  },
-  typeText: {
-    fontWeight: "600",
-    fontSize: 15,
-  },
   inputContainer: {
     width: "100%",
   },
@@ -307,19 +207,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.lg,
     fontSize: Typography.body.fontSize,
     textAlignVertical: "top",
-  },
-  seriesInfo: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.sm,
-    marginTop: Spacing.md,
-    gap: Spacing.sm,
-  },
-  seriesInfoText: {
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 18,
   },
   sectionTitle: {
     marginBottom: Spacing.xs,

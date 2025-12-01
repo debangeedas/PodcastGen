@@ -12,7 +12,7 @@ import { GenerationParams } from "@/utils/conversationFlow";
 
 export type CreateStackParamList = {
   Create: undefined;
-  ChatCreation: { topic: string; forceSeries?: boolean };
+  ChatCreation: { topic: string };
   Generating: { topic: string; isSeries?: boolean; conversationParams?: GenerationParams };
   Player: { podcastId: string };
   SeriesDetail: { seriesId: string };

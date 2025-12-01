@@ -41,7 +41,7 @@ type ChatCreationScreenProps = {
 };
 
 export default function ChatCreationScreen({ navigation, route }: ChatCreationScreenProps) {
-  const { topic, forceSeries } = route.params;
+  const { topic } = route.params;
   const { theme, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
@@ -54,7 +54,7 @@ export default function ChatCreationScreen({ navigation, route }: ChatCreationSc
   useEffect(() => {
     const initConversation = async () => {
       const settings = await getSettings();
-      const initialState = createInitialState(topic, settings.preferredVoice, forceSeries);
+      const initialState = createInitialState(topic, settings.preferredVoice);
       setState(initialState);
       
       try {
@@ -77,7 +77,7 @@ export default function ChatCreationScreen({ navigation, route }: ChatCreationSc
     };
     
     initConversation();
-  }, [topic, forceSeries]);
+  }, [topic]);
 
   useEffect(() => {
     if (state?.isLoading) {
@@ -162,6 +162,10 @@ export default function ChatCreationScreen({ navigation, route }: ChatCreationSc
   };
 
   const handleQuickReply = (reply: string) => {
+    if (reply.toLowerCase().includes("generate podcast")) {
+      handleGenerate();
+      return;
+    }
     handleSendMessage(reply);
   };
 
