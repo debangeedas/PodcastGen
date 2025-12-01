@@ -9,6 +9,7 @@ import { StatusBar } from "expo-status-bar";
 import MainTabNavigator from "@/navigation/MainTabNavigator";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AudioPlayerProvider } from "@/contexts/AudioPlayerContext";
+import { AuthProvider } from "@/contexts/AuthContext";
 import MiniPlayer from "@/components/MiniPlayer";
 
 function getActiveRouteName(state: NavigationState | undefined): string {
@@ -34,15 +35,17 @@ export default function App() {
     <SafeAreaProvider>
         <GestureHandlerRootView style={styles.root}>
           <KeyboardProvider>
-            <AudioPlayerProvider>
-              <NavigationContainer 
-                ref={navigationRef}
-                onStateChange={onNavigationStateChange}
-              >
-                <MainTabNavigator />
-                <MiniPlayer isOnPlayScreen={isOnPlayScreen} />
-              </NavigationContainer>
-            </AudioPlayerProvider>
+            <AuthProvider>
+              <AudioPlayerProvider>
+                <NavigationContainer 
+                  ref={navigationRef}
+                  onStateChange={onNavigationStateChange}
+                >
+                  <MainTabNavigator />
+                  <MiniPlayer isOnPlayScreen={isOnPlayScreen} />
+                </NavigationContainer>
+              </AudioPlayerProvider>
+            </AuthProvider>
             <StatusBar style="auto" />
           </KeyboardProvider>
         </GestureHandlerRootView>

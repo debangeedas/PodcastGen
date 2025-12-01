@@ -13,7 +13,9 @@ import * as Haptics from "expo-haptics";
 import { ScreenKeyboardAwareScrollView } from "@/components/ScreenKeyboardAwareScrollView";
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
+import LoginPrompt from "@/components/LoginPrompt";
 import { useTheme } from "@/hooks/useTheme";
+import { useAuth } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius, Typography } from "@/constants/theme";
 import Spacer from "@/components/Spacer";
 import { CreateStackParamList } from "@/navigation/CreateStackNavigator";
@@ -37,8 +39,10 @@ const QUICK_TOPICS = [
 
 export default function CreateScreen({ navigation }: CreateScreenProps) {
   const { theme } = useTheme();
+  const { isAuthenticated } = useAuth();
   const [topic, setTopic] = useState("");
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
   const loadRecentSearches = useCallback(async () => {
     const searches = await getRecentSearches();
@@ -51,6 +55,12 @@ export default function CreateScreen({ navigation }: CreateScreenProps) {
     return unsubscribe;
   }, [navigation, loadRecentSearches]);
 
+  const proceedToCreate = () => {
+    navigation.navigate("ChatCreation", { 
+      topic: topic.trim(),
+    });
+  };
+
   const handleGenerate = async () => {
     if (!topic.trim()) {
       Alert.alert("Enter a topic", "Please enter what you want to learn about.");
@@ -58,9 +68,18 @@ export default function CreateScreen({ navigation }: CreateScreenProps) {
     }
 
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    navigation.navigate("ChatCreation", { 
-      topic: topic.trim(),
-    });
+
+    if (!isAuthenticated) {
+      setShowLoginPrompt(true);
+      return;
+    }
+
+    proceedToCreate();
+  };
+
+  const handleLoginSuccess = () => {
+    setShowLoginPrompt(false);
+    proceedToCreate();
   };
 
   const handleQuickTopic = async (quickTopic: string) => {
@@ -185,6 +204,12 @@ export default function CreateScreen({ navigation }: CreateScreenProps) {
       ) : null}
 
       <Spacer height={Spacing["4xl"]} />
+
+      <LoginPrompt
+        visible={showLoginPrompt}
+        onClose={() => setShowLoginPrompt(false)}
+        onSuccess={handleLoginSuccess}
+      />
     </ScreenKeyboardAwareScrollView>
   );
 }

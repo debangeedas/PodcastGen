@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { StyleSheet, View, TextInput, Pressable, Alert, Switch } from "react-native";
+import { StyleSheet, View, TextInput, Pressable, Alert, Switch, Platform } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
+import * as AppleAuthentication from "expo-apple-authentication";
 import Constants from "expo-constants";
 
 import { ScreenKeyboardAwareScrollView } from "@/components/ScreenKeyboardAwareScrollView";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
+import { useAuth } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius, Typography, Colors } from "@/constants/theme";
 import Spacer from "@/components/Spacer";
 import {
@@ -41,6 +43,7 @@ const VOICE_OPTIONS = [
 
 export default function ProfileScreen() {
   const { theme, isDark } = useTheme();
+  const { user, isAuthenticated, signInWithApple, signOut, isAppleAuthAvailable } = useAuth();
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -48,6 +51,32 @@ export default function ProfileScreen() {
     const data = await getSettings();
     setSettings(data);
   }, []);
+
+  const handleSignIn = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const success = await signInWithApple();
+    if (success) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  };
+
+  const handleSignOut = () => {
+    Alert.alert(
+      "Sign Out",
+      "Are you sure you want to sign out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Sign Out",
+          style: "destructive",
+          onPress: async () => {
+            await signOut();
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+        },
+      ]
+    );
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -93,6 +122,87 @@ export default function ProfileScreen() {
   return (
     <ScreenKeyboardAwareScrollView>
       <Spacer height={Spacing.lg} />
+
+      <ThemedText type="h4" style={styles.sectionTitle}>
+        Account
+      </ThemedText>
+      <Spacer height={Spacing.md} />
+
+      {isAuthenticated && user ? (
+        <View style={[styles.settingCard, { backgroundColor: theme.backgroundDefault }]}>
+          <View style={styles.userInfo}>
+            <View style={[styles.userAvatar, { backgroundColor: theme.primary }]}>
+              <Feather name="user" size={24} color="#FFFFFF" />
+            </View>
+            <View style={styles.userDetails}>
+              <ThemedText type="body" style={{ fontWeight: "600" }}>
+                {user.fullName || "Podcast Creator"}
+              </ThemedText>
+              <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                {user.email || "Signed in with Apple"}
+              </ThemedText>
+            </View>
+          </View>
+          <Pressable
+            onPress={handleSignOut}
+            style={({ pressed }) => [
+              styles.signOutButton,
+              {
+                backgroundColor: theme.error + "15",
+                opacity: pressed ? 0.8 : 1,
+              },
+            ]}
+          >
+            <Feather name="log-out" size={16} color={theme.error} />
+            <ThemedText type="small" style={{ color: theme.error, marginLeft: Spacing.sm }}>
+              Sign Out
+            </ThemedText>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={[styles.settingCard, { backgroundColor: theme.backgroundDefault }]}>
+          <View style={styles.signInPrompt}>
+            <View style={[styles.userAvatar, { backgroundColor: theme.backgroundSecondary }]}>
+              <Feather name="user" size={24} color={theme.textSecondary} />
+            </View>
+            <View style={styles.userDetails}>
+              <ThemedText type="body" style={{ fontWeight: "600" }}>
+                Not signed in
+              </ThemedText>
+              <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                Sign in to create podcasts
+              </ThemedText>
+            </View>
+          </View>
+          {Platform.OS === "ios" && isAppleAuthAvailable ? (
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={
+                isDark
+                  ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                  : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+              }
+              cornerRadius={BorderRadius.sm}
+              style={styles.appleSignInButton}
+              onPress={handleSignIn}
+            />
+          ) : (
+            <View style={[styles.webNotice, { backgroundColor: theme.backgroundSecondary }]}>
+              <Feather name="smartphone" size={16} color={theme.primary} />
+              <ThemedText type="small" style={{ color: theme.textSecondary, marginLeft: Spacing.sm, flex: 1 }}>
+                Sign in with Apple is available on iOS
+              </ThemedText>
+            </View>
+          )}
+        </View>
+      )}
+
+      <Spacer height={Spacing["3xl"]} />
+
+      <ThemedText type="h4" style={styles.sectionTitle}>
+        Profile
+      </ThemedText>
+      <Spacer height={Spacing.md} />
 
       <View style={styles.avatarSection}>
         <View style={styles.avatarsRow}>
@@ -372,5 +482,44 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     minWidth: "30%",
     alignItems: "center",
+  },
+  userInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: Spacing.lg,
+  },
+  signInPrompt: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: Spacing.lg,
+  },
+  userAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: Spacing.md,
+  },
+  userDetails: {
+    flex: 1,
+  },
+  signOutButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+  },
+  appleSignInButton: {
+    width: "100%",
+    height: 44,
+  },
+  webNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.sm,
   },
 });

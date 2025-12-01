@@ -9,12 +9,14 @@ PodcastGen is a mobile app that creates podcasts from search queries. Users ente
 - **Storage**: AsyncStorage for local data persistence
 - **Audio**: expo-av for audio playback
 - **AI Integration**: OpenAI API (GPT-4 for script generation, TTS for audio)
+- **Authentication**: expo-apple-authentication for Apple Sign-In (iOS)
 
 ## Project Structure
 ```
-├── App.tsx                 # Root component with navigation + AudioPlayerProvider + MiniPlayer
+├── App.tsx                 # Root component with navigation + AuthProvider + AudioPlayerProvider + MiniPlayer
 ├── contexts/
-│   └── AudioPlayerContext.tsx  # Global audio playback state management
+│   ├── AudioPlayerContext.tsx  # Global audio playback state management
+│   └── AuthContext.tsx         # Authentication state with Apple Sign-In
 ├── navigation/
 │   ├── MainTabNavigator.tsx    # 4-tab navigation (Library, Create, Play, Profile)
 │   ├── LibraryStackNavigator.tsx
@@ -33,7 +35,8 @@ PodcastGen is a mobile app that creates podcasts from search queries. Users ente
 ├── components/
 │   ├── AnimatedWaveform.tsx    # Animated audio visualization
 │   ├── WaveformPreview.tsx     # Static waveform for library cards
-│   ├── MiniPlayer.tsx          # New - Persistent play bar at bottom
+│   ├── MiniPlayer.tsx          # Persistent play bar at bottom
+│   ├── LoginPrompt.tsx         # Authentication modal for sign-in
 │   ├── Button.tsx              # Primary action button
 │   ├── Card.tsx                # Elevated card component
 │   └── ...
@@ -46,17 +49,18 @@ PodcastGen is a mobile app that creates podcasts from search queries. Users ente
 ```
 
 ## Key Features
-1. **Conversational AI Interface**: Chat-based creation with follow-up questions to refine topic scope, depth, and style
-2. **Single Episode Mode**: Create a focused episode on a specific topic
-3. **Series Mode**: Generate multi-episode series (3-5 episodes) for broader topics
-4. **Episode Plan Approval**: For series, review and approve episode titles before generation
-5. **AI Script Generation**: Uses GPT-4 to create engaging podcast scripts
-6. **Text-to-Speech**: Converts scripts to natural audio using OpenAI TTS
-7. **Audio Player**: Full playback with time-synced scrolling lyrics
-8. **Source Transparency**: "See Sources" modal shows research citations
-9. **Library Management**: Separate views for series and standalone episodes
-10. **Voice Selection**: 6 narrator options (onyx, alloy, echo, fable, nova, shimmer)
-11. **Favorites**: Mark podcasts and series as favorites
+1. **Authentication**: Apple Sign-In on iOS, guest mode on other platforms
+2. **Conversational AI Interface**: Chat-based creation with follow-up questions to refine topic scope, depth, and style
+3. **Single Episode Mode**: Create a focused episode on a specific topic
+4. **Series Mode**: Generate multi-episode series (3-5 episodes) for broader topics
+5. **Episode Plan Approval**: For series, review and approve episode titles before generation
+6. **AI Script Generation**: Uses GPT-4 to create engaging podcast scripts
+7. **Text-to-Speech**: Converts scripts to natural audio using OpenAI TTS
+8. **Audio Player**: Full playback with time-synced scrolling lyrics
+9. **Source Transparency**: "See Sources" modal shows research citations
+10. **Library Management**: Separate views for series and standalone episodes
+11. **Voice Selection**: 6 narrator options (onyx, alloy, echo, fable, nova, shimmer)
+12. **Favorites**: Mark podcasts and series as favorites
 
 ## Data Model
 ### Podcast (single episode or series episode)
@@ -87,7 +91,12 @@ npm run dev
 - Or access web version at http://localhost:8081
 
 ## Recent Changes
+- Added authentication flow with Apple Sign-In (iOS) and guest mode fallback
+- Login prompt appears when clicking "Start Creating" if not authenticated
+- Profile screen shows account info with sign-in/sign-out options
+- AuthContext manages global auth state with AsyncStorage persistence
 - Added "Play" tab with persistent mini player bar across all screens (like Spotify)
+- Mini player hides on Play screen, reappears when pressing play
 - AudioPlayerContext provides global playback state management
 - After podcast generation, automatically navigates to Play tab and starts playing
 - Library and Series screens now use global audio player for seamless playback
