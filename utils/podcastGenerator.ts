@@ -47,6 +47,17 @@ export interface SeriesGenerationProgress extends GenerationProgress {
 
 export type ProgressCallback = (progress: GenerationProgress) => void;
 
+export interface GenerationOptions {
+  voice?: string;
+  style?: "conversational" | "educational" | "storytelling" | "documentary" | "quick";
+  depth?: "quick" | "standard" | "deep";
+  approvedOutline?: Array<{
+    title: string;
+    focus: string;
+    keyPoints?: string[];
+  }>;
+}
+
 interface ResearchResult {
   content: string;
   sources: string[];
@@ -432,8 +443,9 @@ async function generateAudio(
 export async function generatePodcast(
   topic: string,
   onProgress: ProgressCallback,
-  voice: string = "onyx"
+  options: GenerationOptions = {}
 ): Promise<Podcast> {
+  const { voice = "onyx", style, depth } = options;
   const podcastId = `podcast_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
   try {
@@ -485,6 +497,8 @@ export async function generatePodcast(
       sources: research.sources,
       isFavorite: false,
       voiceUsed: voice,
+      style,
+      depth,
     };
 
     return podcast;
@@ -502,19 +516,39 @@ export interface SeriesGenerationResult {
 export async function generatePodcastSeries(
   topic: string,
   onProgress: (progress: GenerationProgress) => void,
-  voice: string = "onyx"
+  options: GenerationOptions = {}
 ): Promise<SeriesGenerationResult> {
+  const { voice = "onyx", style, depth, approvedOutline } = options;
   const seriesId = `series_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const coverColor = SERIES_COLORS[Math.floor(Math.random() * SERIES_COLORS.length)];
 
   try {
-    onProgress({
-      stage: "planning",
-      message: "Planning episode structure...",
-      progress: 0.05,
-    });
-
-    const seriesOutline = await planSeries(topic);
+    let seriesOutline: SeriesOutline;
+    
+    if (approvedOutline && approvedOutline.length > 0) {
+      onProgress({
+        stage: "planning",
+        message: "Using approved episode plan...",
+        progress: 0.05,
+      });
+      seriesOutline = {
+        title: topic,
+        description: `A ${approvedOutline.length}-episode series exploring ${topic}`,
+        episodes: approvedOutline.map((ep) => ({
+          title: ep.title,
+          focus: ep.focus,
+          keyPoints: ep.keyPoints || [],
+        })),
+      };
+    } else {
+      onProgress({
+        stage: "planning",
+        message: "Planning episode structure...",
+        progress: 0.05,
+      });
+      seriesOutline = await planSeries(topic);
+    }
+    
     const totalEpisodes = seriesOutline.episodes.length;
     const episodes: Podcast[] = [];
     let totalDuration = 0;
@@ -574,6 +608,8 @@ export async function generatePodcastSeries(
         voiceUsed: voice,
         seriesId,
         episodeNumber,
+        style,
+        depth,
       };
 
       episodes.push(episode);
@@ -595,6 +631,8 @@ export async function generatePodcastSeries(
       createdAt: new Date().toISOString(),
       coverColor,
       isFavorite: false,
+      style,
+      depth,
     };
 
     return { series, episodes };

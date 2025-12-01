@@ -42,7 +42,7 @@ export default function GeneratingScreen({
   route,
 }: GeneratingScreenProps) {
   const { theme } = useTheme();
-  const { topic, isSeries } = route.params;
+  const { topic, isSeries, conversationParams } = route.params;
   const [progress, setProgress] = useState<GenerationProgress>({
     stage: isSeries ? "planning" : "searching",
     message: "Starting...",
@@ -81,13 +81,20 @@ export default function GeneratingScreen({
     const generate = async () => {
       try {
         const settings = await getSettings();
+        
+        const generationOptions = {
+          voice: conversationParams?.voice || settings.preferredVoice,
+          style: conversationParams?.style as any,
+          depth: conversationParams?.depth as any,
+          approvedOutline: conversationParams?.approvedOutline || undefined,
+        };
 
         if (isSeries) {
           const result = await generatePodcastSeries(topic, (prog) => {
             if (isMounted.current) {
               setProgress(prog);
             }
-          }, settings.preferredVoice);
+          }, generationOptions);
 
           await saveSeries(result.series);
           for (const episode of result.episodes) {
@@ -105,7 +112,7 @@ export default function GeneratingScreen({
             if (isMounted.current) {
               setProgress(prog);
             }
-          }, settings.preferredVoice);
+          }, generationOptions);
 
           await savePodcast(podcast);
           await addRecentSearch(topic);
@@ -127,7 +134,7 @@ export default function GeneratingScreen({
     };
 
     generate();
-  }, [topic, isSeries, navigation, retryCount]);
+  }, [topic, isSeries, navigation, retryCount, conversationParams]);
 
   const handleCancel = () => {
     Alert.alert(

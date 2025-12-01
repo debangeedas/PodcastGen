@@ -14,6 +14,8 @@ export interface Podcast {
   seriesId?: string;
   episodeNumber?: number;
   episodeTitle?: string;
+  style?: "conversational" | "educational" | "storytelling" | "documentary" | "quick";
+  depth?: "quick" | "standard" | "deep";
 }
 
 export interface PodcastSeries {
@@ -25,6 +27,8 @@ export interface PodcastSeries {
   createdAt: string;
   coverColor: string;
   isFavorite?: boolean;
+  style?: "conversational" | "educational" | "storytelling" | "documentary" | "quick";
+  depth?: "quick" | "standard" | "deep";
 }
 
 export interface UserSettings {

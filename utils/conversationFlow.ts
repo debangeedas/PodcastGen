@@ -436,17 +436,34 @@ export interface GenerationParams {
   isSeries: boolean;
   depth: "quick" | "standard" | "deep";
   tone: "conversational" | "educational" | "storytelling";
+  style: "conversational" | "educational" | "storytelling" | "documentary" | "quick";
   voice: string;
   episodePlan: EpisodePlan[] | null;
+  approvedOutline: Array<{ title: string; focus: string; keyPoints?: string[] }> | null;
 }
 
 export function getGenerationParams(context: ConversationContext): GenerationParams {
+  const toneToStyle = (tone: string | null): GenerationParams["style"] => {
+    switch (tone) {
+      case "conversational": return "conversational";
+      case "educational": return "educational";
+      case "storytelling": return "storytelling";
+      default: return "conversational";
+    }
+  };
+  
   return {
     topic: context.refinedTopic || context.originalTopic,
     isSeries: context.format === "series",
     depth: context.depth || "standard",
     tone: context.tone || "conversational",
+    style: toneToStyle(context.tone),
     voice: context.voice,
     episodePlan: context.episodePlan,
+    approvedOutline: context.episodePlan?.map((ep) => ({
+      title: ep.title,
+      focus: ep.focus,
+      keyPoints: ep.keyPoints,
+    })) || null,
   };
 }
