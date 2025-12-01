@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { StyleSheet, View, Pressable, Alert, Platform, ScrollView, Animated } from "react-native";
+import { StyleSheet, View, Pressable, Alert, Platform, ScrollView, Modal } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
@@ -7,6 +7,7 @@ import { Audio } from "expo-av";
 import * as Haptics from "expo-haptics";
 import * as Sharing from "expo-sharing";
 import Slider from "@react-native-community/slider";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
@@ -56,12 +57,13 @@ function parseScriptToSentences(script: string, totalDuration: number): Sentence
 
 export default function PlayerScreen({ navigation, route }: PlayerScreenProps) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { podcastId } = route.params;
   const [podcast, setPodcast] = useState<Podcast | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [showSources, setShowSources] = useState(false);
+  const [showSourcesModal, setShowSourcesModal] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
   const isSeeking = useRef(false);
   const scrollViewRef = useRef<ScrollView>(null);
@@ -85,7 +87,7 @@ export default function PlayerScreen({ navigation, route }: PlayerScreenProps) {
     if (scrollViewRef.current && sentenceRefs.current[currentSentenceIndex] !== undefined) {
       const yOffset = sentenceRefs.current[currentSentenceIndex];
       scrollViewRef.current.scrollTo({
-        y: Math.max(0, yOffset - 100),
+        y: Math.max(0, yOffset - 80),
         animated: true,
       });
     }
@@ -135,7 +137,10 @@ export default function PlayerScreen({ navigation, route }: PlayerScreenProps) {
       if (!isSeeking.current) {
         setPosition(Math.floor(status.positionMillis / 1000));
       }
-      setDuration(Math.floor(status.durationMillis / 1000));
+      const audioDuration = Math.floor(status.durationMillis / 1000);
+      if (!isNaN(audioDuration) && audioDuration > 0) {
+        setDuration(audioDuration);
+      }
       setIsPlaying(status.isPlaying);
 
       if (status.didJustFinish) {
@@ -274,7 +279,7 @@ export default function PlayerScreen({ navigation, route }: PlayerScreenProps) {
                   isActive && styles.lyricTextActive,
                   isActive && { color: theme.primary },
                   isPast && styles.lyricTextPast,
-                  isPast && { opacity: 0.4 },
+                  isPast && { opacity: 0.35 },
                 ]}
               >
                 {sentence.text}
@@ -285,30 +290,17 @@ export default function PlayerScreen({ navigation, route }: PlayerScreenProps) {
         <View style={styles.lyricsBottomPadding} />
       </ScrollView>
 
-      <View style={[styles.bottomBar, { backgroundColor: theme.backgroundDefault }]}>
-        {showSources && podcast.sources && podcast.sources.length > 0 && (
-          <View style={[styles.sourcesPanel, { backgroundColor: theme.backgroundSecondary }]}>
-            <ThemedText type="small" style={styles.sourcesTitle}>Sources</ThemedText>
-            {podcast.sources.slice(0, 3).map((source, index) => (
-              <ThemedText
-                key={index}
-                type="caption"
-                style={{ color: theme.textSecondary }}
-                numberOfLines={1}
-              >
-                {source}
-              </ThemedText>
-            ))}
-          </View>
-        )}
-
-        <View style={styles.titleRow}>
-          <ThemedText type="small" style={styles.titleText} numberOfLines={1}>
+      <View style={[styles.bottomBar, { backgroundColor: theme.backgroundDefault, paddingBottom: Math.max(insets.bottom, Spacing.xl) + 60 }]}>
+        <View style={styles.titleSection}>
+          <ThemedText style={styles.titleText} numberOfLines={2}>
             {podcast.topic}
           </ThemedText>
-          <View style={styles.timeRow}>
-            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-              {formatDuration(position)} / {formatDuration(duration)}
+          <View style={styles.timeDisplay}>
+            <ThemedText style={[styles.currentTime, { color: theme.primary }]}>
+              {formatDuration(position)}
+            </ThemedText>
+            <ThemedText style={[styles.totalTime, { color: theme.textSecondary }]}>
+              {" / "}{formatDuration(duration)}
             </ThemedText>
           </View>
         </View>
@@ -329,69 +321,134 @@ export default function PlayerScreen({ navigation, route }: PlayerScreenProps) {
         />
 
         <View style={styles.controlsRow}>
-          <View style={styles.leftActions}>
-            <Pressable
-              onPress={() => setShowSources(!showSources)}
-              style={({ pressed }) => [styles.smallButton, { opacity: pressed ? 0.7 : 1 }]}
-            >
-              <Feather 
-                name="info" 
-                size={18} 
-                color={showSources ? theme.primary : theme.textSecondary} 
-              />
-            </Pressable>
+          <Pressable
+            onPress={() => handleSkip(-15)}
+            style={({ pressed }) => [styles.skipButton, { opacity: pressed ? 0.7 : 1 }]}
+          >
+            <Feather name="rotate-ccw" size={24} color={theme.text} />
+            <ThemedText style={styles.skipLabel}>15</ThemedText>
+          </Pressable>
+
+          <Pressable
+            onPress={handlePlayPause}
+            style={({ pressed }) => [
+              styles.playButton,
+              {
+                backgroundColor: theme.primary,
+                transform: [{ scale: pressed ? 0.95 : 1 }],
+              },
+            ]}
+          >
+            <Feather
+              name={isPlaying ? "pause" : "play"}
+              size={28}
+              color="#FFFFFF"
+              style={isPlaying ? undefined : { marginLeft: 3 }}
+            />
+          </Pressable>
+
+          <Pressable
+            onPress={() => handleSkip(15)}
+            style={({ pressed }) => [styles.skipButton, { opacity: pressed ? 0.7 : 1 }]}
+          >
+            <Feather name="rotate-cw" size={24} color={theme.text} />
+            <ThemedText style={styles.skipLabel}>15</ThemedText>
+          </Pressable>
+        </View>
+
+        <View style={styles.actionsRow}>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowSourcesModal(true);
+            }}
+            style={({ pressed }) => [
+              styles.sourcesButton,
+              { 
+                backgroundColor: `${theme.primary}15`,
+                borderColor: theme.primary,
+                opacity: pressed ? 0.7 : 1 
+              },
+            ]}
+          >
+            <Feather name="book-open" size={16} color={theme.primary} />
+            <ThemedText style={[styles.sourcesButtonText, { color: theme.primary }]}>
+              See Sources
+            </ThemedText>
+          </Pressable>
+
+          <View style={styles.actionButtons}>
             <Pressable
               onPress={handleShare}
-              style={({ pressed }) => [styles.smallButton, { opacity: pressed ? 0.7 : 1 }]}
-            >
-              <Feather name="share" size={18} color={theme.textSecondary} />
-            </Pressable>
-          </View>
-
-          <View style={styles.mainControls}>
-            <Pressable
-              onPress={() => handleSkip(-15)}
-              style={({ pressed }) => [styles.skipButton, { opacity: pressed ? 0.7 : 1 }]}
-            >
-              <Feather name="rotate-ccw" size={20} color={theme.text} />
-            </Pressable>
-
-            <Pressable
-              onPress={handlePlayPause}
               style={({ pressed }) => [
-                styles.playButton,
-                {
-                  backgroundColor: theme.primary,
-                  transform: [{ scale: pressed ? 0.95 : 1 }],
-                },
+                styles.actionButton,
+                { backgroundColor: theme.backgroundSecondary, opacity: pressed ? 0.7 : 1 },
               ]}
             >
-              <Feather
-                name={isPlaying ? "pause" : "play"}
-                size={22}
-                color="#FFFFFF"
-                style={isPlaying ? undefined : { marginLeft: 2 }}
-              />
+              <Feather name="share" size={18} color={theme.text} />
             </Pressable>
 
-            <Pressable
-              onPress={() => handleSkip(15)}
-              style={({ pressed }) => [styles.skipButton, { opacity: pressed ? 0.7 : 1 }]}
-            >
-              <Feather name="rotate-cw" size={20} color={theme.text} />
-            </Pressable>
-          </View>
-
-          <View style={styles.rightActions}>
             <Pressable
               onPress={handleDelete}
-              style={({ pressed }) => [styles.smallButton, { opacity: pressed ? 0.7 : 1 }]}
+              style={({ pressed }) => [
+                styles.actionButton,
+                { backgroundColor: theme.backgroundSecondary, opacity: pressed ? 0.7 : 1 },
+              ]}
             >
               <Feather name="trash-2" size={18} color={theme.error} />
             </Pressable>
           </View>
         </View>
       </View>
+
+      <Modal
+        visible={showSourcesModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSourcesModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable 
+            style={styles.modalBackdrop} 
+            onPress={() => setShowSourcesModal(false)} 
+          />
+          <View style={[styles.sourcesModal, { backgroundColor: theme.backgroundDefault }]}>
+            <View style={styles.modalHeader}>
+              <ThemedText style={styles.modalTitle}>Sources & Citations</ThemedText>
+              <Pressable
+                onPress={() => setShowSourcesModal(false)}
+                style={({ pressed }) => [styles.closeButton, { opacity: pressed ? 0.7 : 1 }]}
+              >
+                <Feather name="x" size={24} color={theme.text} />
+              </Pressable>
+            </View>
+            
+            <ThemedText style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
+              This podcast was researched using the following sources:
+            </ThemedText>
+
+            <ScrollView style={styles.sourcesList}>
+              {podcast.sources && podcast.sources.length > 0 ? (
+                podcast.sources.map((source, index) => (
+                  <View 
+                    key={index} 
+                    style={[styles.sourceItem, { backgroundColor: theme.backgroundSecondary }]}
+                  >
+                    <View style={[styles.sourceNumber, { backgroundColor: theme.primary }]}>
+                      <ThemedText style={styles.sourceNumberText}>{index + 1}</ThemedText>
+                    </View>
+                    <ThemedText style={styles.sourceText}>{source}</ThemedText>
+                  </View>
+                ))
+              ) : (
+                <ThemedText style={{ color: theme.textSecondary }}>
+                  No sources available for this podcast.
+                </ThemedText>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -401,107 +458,188 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   waveformContainer: {
-    height: 80,
+    height: 70,
     paddingHorizontal: Spacing.lg,
-    marginTop: Spacing.md,
+    marginTop: Spacing.sm,
   },
   lyricsContainer: {
     flex: 1,
     paddingHorizontal: Spacing.xl,
   },
   lyricsContent: {
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.xl,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.md,
   },
   lyricText: {
-    fontSize: 22,
-    lineHeight: 36,
-    marginBottom: Spacing.lg,
+    fontSize: 26,
+    lineHeight: 38,
+    marginBottom: Spacing.sm,
     fontWeight: "400",
   },
   lyricTextActive: {
-    fontSize: 26,
-    lineHeight: 40,
-    fontWeight: "600",
+    fontSize: 30,
+    lineHeight: 44,
+    fontWeight: "700",
   },
   lyricTextPast: {
-    fontSize: 20,
-    lineHeight: 32,
+    fontSize: 24,
+    lineHeight: 34,
   },
   lyricsBottomPadding: {
-    height: 100,
+    height: 60,
   },
   bottomBar: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.lg,
     paddingBottom: Spacing.xl,
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 10,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 15,
   },
-  sourcesPanel: {
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    marginBottom: Spacing.sm,
-  },
-  sourcesTitle: {
-    fontWeight: "600",
-    marginBottom: Spacing.xs,
-  },
-  titleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.xs,
+  titleSection: {
+    marginBottom: Spacing.md,
   },
   titleText: {
-    flex: 1,
-    fontWeight: "600",
-    marginRight: Spacing.md,
+    fontSize: 20,
+    fontWeight: "700",
+    lineHeight: 26,
+    marginBottom: Spacing.xs,
   },
-  timeRow: {
+  timeDisplay: {
     flexDirection: "row",
+    alignItems: "baseline",
+  },
+  currentTime: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  totalTime: {
+    fontSize: 14,
+    fontWeight: "400",
   },
   slider: {
     width: "100%",
-    height: 28,
-    marginBottom: Spacing.xs,
+    height: 32,
+    marginBottom: Spacing.md,
   },
   controlsRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-  },
-  leftActions: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    width: 70,
-  },
-  rightActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    width: 70,
-  },
-  mainControls: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.lg,
-  },
-  smallButton: {
-    padding: Spacing.sm,
+    justifyContent: "center",
+    gap: Spacing["3xl"],
+    marginBottom: Spacing.lg,
   },
   skipButton: {
-    padding: Spacing.sm,
-  },
-  playButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
+    width: 50,
+    height: 50,
+  },
+  skipLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    marginTop: -4,
+  },
+  playButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sourcesButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  sourcesButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  actionButtons: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  actionButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  sourcesModal: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing["3xl"],
+    maxHeight: "70%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: Spacing.md,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+  },
+  closeButton: {
+    padding: Spacing.xs,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    marginBottom: Spacing.lg,
+    lineHeight: 20,
+  },
+  sourcesList: {
+    flex: 1,
+  },
+  sourceItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.sm,
+  },
+  sourceNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: Spacing.md,
+  },
+  sourceNumberText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  sourceText: {
+    flex: 1,
+    fontSize: 15,
+    lineHeight: 22,
   },
 });
