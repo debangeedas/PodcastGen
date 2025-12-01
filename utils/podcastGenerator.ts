@@ -11,18 +11,103 @@ export interface GenerationProgress {
 
 export type ProgressCallback = (progress: GenerationProgress) => void;
 
-async function searchWebForTopic(topic: string): Promise<string[]> {
-  const sources = [
-    `Information gathered from authoritative sources about: ${topic}`,
-    `Research findings and expert opinions on: ${topic}`,
-    `Recent developments and insights regarding: ${topic}`,
-  ];
-  return sources;
+interface ResearchResult {
+  content: string;
+  sources: string[];
+}
+
+async function researchTopic(topic: string): Promise<ResearchResult> {
+  if (!OPENAI_API_KEY) {
+    throw new Error(
+      "OpenAI API key is not configured. Please add EXPO_PUBLIC_OPENAI_API_KEY to your environment."
+    );
+  }
+
+  const researchPrompt = `You are a research assistant tasked with gathering comprehensive, factual information about a topic. Your goal is to provide well-researched, accurate information that could be used to create an educational podcast.
+
+Research the following topic thoroughly: "${topic}"
+
+Provide:
+1. A comprehensive overview of the topic (2-3 paragraphs)
+2. 5-7 key facts, statistics, or insights that are interesting and educational
+3. Recent developments or trends related to this topic
+4. Common misconceptions to address
+5. Expert perspectives or notable quotes on the subject
+
+Format your response as structured research notes. Be factual, cite specific data where relevant, and focus on information that would make for engaging podcast content.
+
+At the end, list 3-5 credible source types that would typically contain this information (e.g., "Academic journals on neuroscience", "CDC health statistics", "NASA research publications").`;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a knowledgeable research assistant with expertise across many domains. Provide accurate, well-organized information based on verified knowledge. When discussing facts, be specific with numbers, dates, and details where appropriate.",
+          },
+          { role: "user", content: researchPrompt },
+        ],
+        max_tokens: 1500,
+        temperature: 0.5,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.error?.message || `Research API request failed: ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+    const researchContent = data.choices[0]?.message?.content || "";
+
+    const sourcePatterns = [
+      /(?:sources?|references?|citations?):\s*([\s\S]*?)(?:\n\n|$)/i,
+      /(?:credible sources?|source types?):\s*([\s\S]*?)(?:\n\n|$)/i,
+    ];
+
+    let extractedSources: string[] = [];
+    for (const pattern of sourcePatterns) {
+      const match = researchContent.match(pattern);
+      if (match) {
+        extractedSources = match[1]
+          .split(/\n|,|;/)
+          .map((s: string) => s.replace(/^[-*\d.)\s]+/, "").trim())
+          .filter((s: string) => s.length > 10 && s.length < 100);
+        break;
+      }
+    }
+
+    if (extractedSources.length === 0) {
+      extractedSources = [
+        `Research databases and academic publications on ${topic}`,
+        `Expert analysis and industry reports`,
+        `Verified scientific and educational resources`,
+      ];
+    }
+
+    return {
+      content: researchContent,
+      sources: extractedSources.slice(0, 5),
+    };
+  } catch (error) {
+    console.error("Error researching topic:", error);
+    throw error;
+  }
 }
 
 async function generatePodcastScript(
   topic: string,
-  sources: string[]
+  research: ResearchResult
 ): Promise<string> {
   if (!OPENAI_API_KEY) {
     throw new Error(
@@ -30,24 +115,30 @@ async function generatePodcastScript(
     );
   }
 
-  const systemPrompt = `You are a professional podcast host who creates engaging, informative podcast episodes. Your style is conversational yet informative, making complex topics accessible to everyone.
+  const systemPrompt = `You are a charismatic podcast host known for making complex topics accessible and entertaining. You have a warm, conversational style that makes listeners feel like they're chatting with a knowledgeable friend.
+
+Your podcast "Deep Dive" is known for:
+- Breaking down complicated subjects into digestible insights
+- Using relatable analogies and examples
+- Engaging storytelling that keeps listeners hooked
+- Natural speech patterns with thoughtful pauses
 
 Create a podcast script that:
-- Is engaging and conversational in tone
-- Includes an introduction, main content sections, and a conclusion
-- Is approximately 2-3 minutes when read aloud (around 300-400 words)
-- Uses natural speech patterns with occasional pauses marked as "..."
-- Includes interesting facts and insights
-- Ends with a thought-provoking conclusion or call to action
+- Opens with a hook that grabs attention
+- Flows naturally as spoken content (not written text)
+- Is 300-450 words (approximately 2-3 minutes when read aloud)
+- Uses "..." for natural pauses and emphasis
+- Includes specific facts and insights from the research
+- Ends with a memorable takeaway or thought-provoking question
 
-Do not include speaker labels, timestamps, or production notes. Write only the spoken content as if you are the host speaking directly to the listener.`;
+IMPORTANT: Write ONLY the spoken content. No speaker labels, timestamps, directions, or [brackets]. Just the words the host would say.`;
 
   const userPrompt = `Create an engaging podcast episode about: "${topic}"
 
-Base your content on these key points and sources:
-${sources.join("\n")}
+Use this research to inform your content:
+${research.content}
 
-Remember to make it informative yet entertaining, as if you're having a conversation with a curious friend.`;
+Transform this research into a captivating podcast episode. Make it sound natural and conversational, as if you're explaining this to a curious friend over coffee.`;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -63,19 +154,27 @@ Remember to make it informative yet entertaining, as if you're having a conversa
           { role: "user", content: userPrompt },
         ],
         max_tokens: 1000,
-        temperature: 0.7,
+        temperature: 0.75,
       }),
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(
-        errorData.error?.message || `API request failed: ${response.status}`
+        errorData.error?.message || `Script generation failed: ${response.status}`
       );
     }
 
     const data = await response.json();
-    return data.choices[0]?.message?.content || "";
+    const script = data.choices[0]?.message?.content || "";
+
+    const cleanedScript = script
+      .replace(/\[.*?\]/g, "")
+      .replace(/\(.*?pause.*?\)/gi, "...")
+      .replace(/HOST:|SPEAKER:|NARRATOR:/gi, "")
+      .trim();
+
+    return cleanedScript;
   } catch (error) {
     console.error("Error generating script:", error);
     throw error;
@@ -107,12 +206,14 @@ async function generateAudio(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`TTS API request failed: ${response.status} - ${errorText}`);
+      throw new Error(
+        `TTS API request failed: ${response.status} - ${errorText}`
+      );
     }
 
     const audioBlob = await response.blob();
     const reader = new FileReader();
-    
+
     const base64Audio = await new Promise<string>((resolve, reject) => {
       reader.onloadend = () => {
         const base64 = reader.result as string;
@@ -125,7 +226,7 @@ async function generateAudio(
 
     const audioDir = `${FileSystem.documentDirectory}podcasts/`;
     await FileSystem.makeDirectoryAsync(audioDir, { intermediates: true });
-    
+
     const audioUri = `${audioDir}${podcastId}.mp3`;
     await FileSystem.writeAsStringAsync(audioUri, base64Audio, {
       encoding: FileSystem.EncodingType.Base64,
@@ -150,32 +251,31 @@ export async function generatePodcast(
   try {
     onProgress({
       stage: "searching",
-      message: "Searching credible sources...",
+      message: "Researching topic...",
       progress: 0.1,
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    const sources = await searchWebForTopic(topic);
+    const research = await researchTopic(topic);
 
     onProgress({
       stage: "analyzing",
       message: "Analyzing information...",
-      progress: 0.25,
+      progress: 0.3,
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
     onProgress({
       stage: "generating",
-      message: "Generating script...",
-      progress: 0.4,
+      message: "Writing podcast script...",
+      progress: 0.45,
     });
 
-    const script = await generatePodcastScript(topic, sources);
+    const script = await generatePodcastScript(topic, research);
 
     onProgress({
       stage: "creating_audio",
-      message: "Creating audio...",
+      message: "Creating audio narration...",
       progress: 0.7,
     });
 
@@ -194,7 +294,7 @@ export async function generatePodcast(
       audioUri: uri,
       duration,
       createdAt: new Date().toISOString(),
-      sources,
+      sources: research.sources,
     };
 
     return podcast;
