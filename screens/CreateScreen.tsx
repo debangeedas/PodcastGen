@@ -68,6 +68,7 @@ export default function CreateScreen({ navigation }: CreateScreenProps) {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     navigation.navigate("ChatCreation", { 
       topic: topic.trim(),
+      forceSeries: podcastType === "series",
     });
   };
 

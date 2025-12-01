@@ -38,6 +38,7 @@ export interface ConversationContext {
   voice: string;
   episodePlan: EpisodePlan[] | null;
   questionCount: number;
+  forceSeries: boolean;
 }
 
 export interface ConversationState {
@@ -60,6 +61,11 @@ const TEST_FOLLOW_UP_RESPONSES: Record<number, { content: string; quickReplies: 
     content: "One more thing - what style would work best for you?\n\nWould you like it conversational and casual, more educational and structured, or narrative storytelling style?",
     quickReplies: ["Conversational", "Educational", "Storytelling"],
   },
+};
+
+const TEST_SERIES_INITIAL_RESPONSE = {
+  content: "Great choice creating a series! This will give us room to explore multiple aspects of your topic in depth.\n\nFirst, how much time per episode would you prefer? Choose the length that works best for you:",
+  quickReplies: ["Quick episodes (5 min each)", "Standard episodes (10-15 min)", "In-depth episodes (20+ min)"],
 };
 
 const TEST_SERIES_PLAN: EpisodePlan[] = [
@@ -89,7 +95,7 @@ const TEST_SERIES_PLAN: EpisodePlan[] = [
   },
 ];
 
-export function createInitialState(topic: string, voice: string): ConversationState {
+export function createInitialState(topic: string, voice: string, forceSeries?: boolean): ConversationState {
   return {
     phase: "clarifying",
     messages: [
@@ -103,13 +109,14 @@ export function createInitialState(topic: string, voice: string): ConversationSt
     context: {
       originalTopic: topic,
       refinedTopic: topic,
-      specificity: null,
+      specificity: forceSeries ? "broad" : null,
       depth: null,
-      format: null,
+      format: forceSeries ? "series" : null,
       tone: null,
       voice,
       episodePlan: null,
-      questionCount: 0,
+      questionCount: forceSeries ? 1 : 0,
+      forceSeries: forceSeries || false,
     },
     isLoading: true,
   };
@@ -201,7 +208,41 @@ export async function getNextAIResponse(
   if (TEST_MODE) {
     await new Promise((resolve) => setTimeout(resolve, 800 + Math.random() * 500));
     
-    if (context.questionCount < 3) {
+    if (context.forceSeries && context.questionCount === 1 && !userMessage) {
+      updatedContext.questionCount = 2;
+      
+      return {
+        message: {
+          id: generateMessageId(),
+          role: "assistant",
+          content: TEST_SERIES_INITIAL_RESPONSE.content,
+          timestamp: Date.now(),
+          quickReplies: TEST_SERIES_INITIAL_RESPONSE.quickReplies,
+        },
+        updatedContext,
+        nextPhase: "clarifying",
+      };
+    }
+    
+    if (context.forceSeries && context.questionCount === 2) {
+      const parsed = parseUserResponse(userMessage || "", 1);
+      updatedContext = { ...updatedContext, ...parsed };
+      updatedContext.questionCount = 3;
+      
+      return {
+        message: {
+          id: generateMessageId(),
+          role: "assistant",
+          content: TEST_FOLLOW_UP_RESPONSES[2].content,
+          timestamp: Date.now(),
+          quickReplies: TEST_FOLLOW_UP_RESPONSES[2].quickReplies,
+        },
+        updatedContext,
+        nextPhase: "clarifying",
+      };
+    }
+    
+    if (context.questionCount < 3 && !context.forceSeries) {
       const response = TEST_FOLLOW_UP_RESPONSES[context.questionCount];
       updatedContext.questionCount = context.questionCount + 1;
       
@@ -218,7 +259,7 @@ export async function getNextAIResponse(
       };
     }
     
-    if (updatedContext.format === "series" || updatedContext.specificity === "broad") {
+    if (updatedContext.format === "series" || updatedContext.specificity === "broad" || context.forceSeries) {
       const planMessage: ChatMessage = {
         id: generateMessageId(),
         role: "assistant",
