@@ -12,23 +12,28 @@ PodcastGen is a mobile app that creates podcasts from search queries. Users ente
 
 ## Project Structure
 ```
-├── App.tsx                 # Root component with navigation
+├── App.tsx                 # Root component with navigation + AudioPlayerProvider + MiniPlayer
+├── contexts/
+│   └── AudioPlayerContext.tsx  # Global audio playback state management
 ├── navigation/
-│   ├── MainTabNavigator.tsx    # 3-tab navigation (Library, Create, Profile)
+│   ├── MainTabNavigator.tsx    # 4-tab navigation (Library, Create, Play, Profile)
 │   ├── LibraryStackNavigator.tsx
 │   ├── CreateStackNavigator.tsx
+│   ├── PlayStackNavigator.tsx  # New - Play tab navigator
 │   └── ProfileStackNavigator.tsx
 ├── screens/
 │   ├── CreateScreen.tsx        # Podcast creation entry point
 │   ├── ChatCreationScreen.tsx  # Conversational AI for refining topic
 │   ├── GeneratingScreen.tsx    # Progress modal during generation
 │   ├── LibraryScreen.tsx       # Saved podcasts and series list
-│   ├── PlayerScreen.tsx        # Audio playback with lyrics
+│   ├── PlayerScreen.tsx        # Legacy player (used within stacks)
+│   ├── PlayScreen.tsx          # New - Main player in Play tab
 │   ├── SeriesDetailScreen.tsx  # Series episodes viewer
 │   └── ProfileScreen.tsx       # User settings
 ├── components/
 │   ├── AnimatedWaveform.tsx    # Animated audio visualization
 │   ├── WaveformPreview.tsx     # Static waveform for library cards
+│   ├── MiniPlayer.tsx          # New - Persistent play bar at bottom
 │   ├── Button.tsx              # Primary action button
 │   ├── Card.tsx                # Elevated card component
 │   └── ...
@@ -82,10 +87,12 @@ npm run dev
 - Or access web version at http://localhost:8081
 
 ## Recent Changes
+- Added "Play" tab with persistent mini player bar across all screens (like Spotify)
+- AudioPlayerContext provides global playback state management
+- After podcast generation, automatically navigates to Play tab and starts playing
+- Library and Series screens now use global audio player for seamless playback
 - Unified conversation flow for both single episodes and series
-- Removed toggle from Create screen - AI determines format through conversation
-- AI asks 3 questions: scope (specific vs broad), depth, and style
-- Choosing "Broad overview" triggers series flow with episode plan approval
-- Choosing "Specific deep-dive" triggers single episode generation
+- AI asks 3 questions: format preference, depth, and style
+- Choosing "Single episode" creates one focused episode
+- Choosing "Multi-part series" triggers series flow with episode plan approval
 - Quick-reply chips for fast topic refinement
-- Extended data models to store style and depth metadata

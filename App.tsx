@@ -8,6 +8,8 @@ import { StatusBar } from "expo-status-bar";
 
 import MainTabNavigator from "@/navigation/MainTabNavigator";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { AudioPlayerProvider } from "@/contexts/AudioPlayerContext";
+import MiniPlayer from "@/components/MiniPlayer";
 
 export default function App() {
   return (
@@ -15,9 +17,12 @@ export default function App() {
     <SafeAreaProvider>
         <GestureHandlerRootView style={styles.root}>
           <KeyboardProvider>
-            <NavigationContainer>
-              <MainTabNavigator />
-            </NavigationContainer>
+            <AudioPlayerProvider>
+              <NavigationContainer>
+                <MainTabNavigator />
+                <MiniPlayer />
+              </NavigationContainer>
+            </AudioPlayerProvider>
             <StatusBar style="auto" />
           </KeyboardProvider>
         </GestureHandlerRootView>

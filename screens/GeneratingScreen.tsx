@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { StyleSheet, View, Alert, Animated, Easing } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { RouteProp } from "@react-navigation/native";
+import { RouteProp, CommonActions } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -17,6 +17,7 @@ import {
   GenerationProgress,
 } from "@/utils/podcastGenerator";
 import { savePodcast, saveSeries, addRecentSearch, getSettings } from "@/utils/storage";
+import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 
 type GeneratingScreenProps = {
   navigation: NativeStackNavigationProp<CreateStackParamList, "Generating">;
@@ -43,6 +44,7 @@ export default function GeneratingScreen({
 }: GeneratingScreenProps) {
   const { theme } = useTheme();
   const { topic, isSeries, conversationParams } = route.params;
+  const { playPodcast } = useAudioPlayer();
   const [progress, setProgress] = useState<GenerationProgress>({
     stage: isSeries ? "planning" : "searching",
     message: "Starting...",
@@ -105,7 +107,18 @@ export default function GeneratingScreen({
 
           if (isMounted.current) {
             setIsGenerating(false);
-            navigation.replace("SeriesDetail", { seriesId: result.series.id });
+            if (result.episodes.length > 0) {
+              await playPodcast(result.episodes[0].id);
+            }
+            navigation.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [
+                  { name: "Create" },
+                ],
+              })
+            );
+            navigation.getParent()?.navigate("PlayTab");
           }
         } else {
           const podcast = await generatePodcast(topic, (prog) => {
@@ -120,7 +133,16 @@ export default function GeneratingScreen({
 
           if (isMounted.current) {
             setIsGenerating(false);
-            navigation.replace("Player", { podcastId: podcast.id });
+            await playPodcast(podcast.id);
+            navigation.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [
+                  { name: "Create" },
+                ],
+              })
+            );
+            navigation.getParent()?.navigate("PlayTab");
           }
         }
       } catch (err) {

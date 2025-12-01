@@ -5,12 +5,14 @@ import { BlurView } from "expo-blur";
 import { Platform, StyleSheet } from "react-native";
 import LibraryStackNavigator from "@/navigation/LibraryStackNavigator";
 import CreateStackNavigator from "@/navigation/CreateStackNavigator";
+import PlayStackNavigator from "@/navigation/PlayStackNavigator";
 import ProfileStackNavigator from "@/navigation/ProfileStackNavigator";
 import { useTheme } from "@/hooks/useTheme";
 
 export type MainTabParamList = {
   LibraryTab: undefined;
   CreateTab: undefined;
+  PlayTab: undefined;
   ProfileTab: undefined;
 };
 
@@ -62,6 +64,16 @@ export default function MainTabNavigator() {
           title: "Create",
           tabBarIcon: ({ color, size }) => (
             <Feather name="plus-circle" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="PlayTab"
+        component={PlayStackNavigator}
+        options={{
+          title: "Play",
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="play-circle" size={size} color={color} />
           ),
         }}
       />

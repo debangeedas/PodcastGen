@@ -2,7 +2,7 @@ import React, { useState, useCallback } from "react";
 import { StyleSheet, View, Pressable, Alert } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { RouteProp, useFocusEffect } from "@react-navigation/native";
+import { RouteProp, useFocusEffect, useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 
 import { ScreenScrollView } from "@/components/ScreenScrollView";
@@ -22,6 +22,7 @@ import {
   toggleSeriesFavorite,
 } from "@/utils/storage";
 import { formatDuration } from "@/utils/podcastGenerator";
+import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 
 type SeriesDetailScreenProps = {
   navigation: NativeStackNavigationProp<LibraryStackParamList | CreateStackParamList, "SeriesDetail">;
@@ -37,6 +38,8 @@ export default function SeriesDetailScreen({
   const [series, setSeries] = useState<PodcastSeries | null>(null);
   const [episodes, setEpisodes] = useState<Podcast[]>([]);
   const [loading, setLoading] = useState(true);
+  const { playPodcast } = useAudioPlayer();
+  const rootNavigation = useNavigation<any>();
 
   const loadData = useCallback(async () => {
     const [seriesData, episodesData] = await Promise.all([
@@ -56,13 +59,15 @@ export default function SeriesDetailScreen({
 
   const handlePlayEpisode = async (episode: Podcast) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    navigation.navigate("Player", { podcastId: episode.id });
+    await playPodcast(episode.id);
+    rootNavigation.navigate("PlayTab");
   };
 
   const handlePlayAll = async () => {
     if (episodes.length > 0) {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      navigation.navigate("Player", { podcastId: episodes[0].id });
+      await playPodcast(episodes[0].id);
+      rootNavigation.navigate("PlayTab");
     }
   };
 
