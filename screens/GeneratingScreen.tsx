@@ -50,6 +50,7 @@ export default function GeneratingScreen({
   });
   const [isGenerating, setIsGenerating] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const spinValue = useRef(new Animated.Value(0)).current;
   const isMounted = useRef(true);
 
@@ -126,7 +127,7 @@ export default function GeneratingScreen({
     };
 
     generate();
-  }, [topic, isSeries, navigation]);
+  }, [topic, isSeries, navigation, retryCount]);
 
   const handleCancel = () => {
     Alert.alert(
@@ -147,6 +148,7 @@ export default function GeneratingScreen({
     setError(null);
     setIsGenerating(true);
     setProgress({ stage: isSeries ? "planning" : "searching", message: "Starting...", progress: 0 });
+    setRetryCount((c) => c + 1);
   };
 
   const spinRotation = spinValue.interpolate({
