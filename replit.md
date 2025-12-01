@@ -1,7 +1,7 @@
 # PodcastGen - AI Podcast Generator
 
 ## Overview
-PodcastGen is a mobile app that creates podcasts from search queries. Users enter a topic they want to learn about, and the app uses AI (OpenAI GPT-4 and TTS) to generate engaging podcast content. Supports both single focused episodes and multi-episode series for broader topics.
+PodcastGen is a mobile app that creates podcasts from search queries. Users enter a topic they want to learn about, and the app uses AI (OpenAI GPT-4 and TTS) to generate engaging podcast content. Features a conversational AI interface that asks clarifying questions before generating, and supports both single focused episodes and multi-episode series for broader topics.
 
 ## Tech Stack
 - **Framework**: Expo (React Native)
@@ -19,7 +19,8 @@ PodcastGen is a mobile app that creates podcasts from search queries. Users ente
 │   ├── CreateStackNavigator.tsx
 │   └── ProfileStackNavigator.tsx
 ├── screens/
-│   ├── CreateScreen.tsx        # Podcast creation with single/series toggle
+│   ├── CreateScreen.tsx        # Podcast creation entry point
+│   ├── ChatCreationScreen.tsx  # Conversational AI for refining topic
 │   ├── GeneratingScreen.tsx    # Progress modal during generation
 │   ├── LibraryScreen.tsx       # Saved podcasts and series list
 │   ├── PlayerScreen.tsx        # Audio playback with lyrics
@@ -33,31 +34,34 @@ PodcastGen is a mobile app that creates podcasts from search queries. Users ente
 │   └── ...
 ├── utils/
 │   ├── storage.ts              # AsyncStorage utilities (podcasts + series)
-│   └── podcastGenerator.ts     # OpenAI integration + series generation
+│   ├── podcastGenerator.ts     # OpenAI integration + series generation
+│   └── conversationFlow.ts     # Chat state machine + AI follow-ups
 └── constants/
     └── theme.ts                # Design system colors/spacing
 ```
 
 ## Key Features
-1. **Single Episode Mode**: Create a focused episode on a specific topic
-2. **Series Mode**: Generate multi-episode series (3-5 episodes) for broader topics
-3. **AI Script Generation**: Uses GPT-4 to create engaging podcast scripts
-4. **Text-to-Speech**: Converts scripts to natural audio using OpenAI TTS
-5. **Audio Player**: Full playback with time-synced scrolling lyrics
-6. **Source Transparency**: "See Sources" modal shows research citations
-7. **Library Management**: Separate views for series and standalone episodes
-8. **Voice Selection**: 6 narrator options (onyx, alloy, echo, fable, nova, shimmer)
-9. **Favorites**: Mark podcasts and series as favorites
+1. **Conversational AI Interface**: Chat-based creation with follow-up questions to refine topic scope, depth, and style
+2. **Single Episode Mode**: Create a focused episode on a specific topic
+3. **Series Mode**: Generate multi-episode series (3-5 episodes) for broader topics
+4. **Episode Plan Approval**: For series, review and approve episode titles before generation
+5. **AI Script Generation**: Uses GPT-4 to create engaging podcast scripts
+6. **Text-to-Speech**: Converts scripts to natural audio using OpenAI TTS
+7. **Audio Player**: Full playback with time-synced scrolling lyrics
+8. **Source Transparency**: "See Sources" modal shows research citations
+9. **Library Management**: Separate views for series and standalone episodes
+10. **Voice Selection**: 6 narrator options (onyx, alloy, echo, fable, nova, shimmer)
+11. **Favorites**: Mark podcasts and series as favorites
 
 ## Data Model
 ### Podcast (single episode or series episode)
 - id, topic, script, audioUri, duration, createdAt, sources
 - seriesId (if part of series), episodeNumber, episodeTitle
-- isFavorite, voiceUsed, category
+- isFavorite, voiceUsed, category, style, depth
 
 ### PodcastSeries
 - id, topic, description, episodeCount, totalDuration
-- createdAt, coverColor, isFavorite
+- createdAt, coverColor, isFavorite, style, depth
 
 ## Environment Variables
 - `EXPO_PUBLIC_OPENAI_API_KEY`: Required for AI features (script + audio generation)
@@ -78,11 +82,10 @@ npm run dev
 - Or access web version at http://localhost:8081
 
 ## Recent Changes
-- Added podcast series support for multi-episode content
-- Create screen toggle between single episode and series modes
-- Series generation creates 3-5 themed episodes with AI
-- Library shows series and episodes in separate sections
-- Series detail screen with episode list and "Play All"
-- Player screen with time-synced scrolling lyrics
-- "See Sources" modal for research transparency
-- Fixed retry button on generation failure
+- Added conversational AI interface with ChatCreationScreen
+- AI asks 2-4 follow-up questions to clarify topic scope, depth, and style
+- Episode plan approval workflow for series (Approve/Modify/Single options)
+- Quick-reply chips for fast topic refinement
+- Extended data models to store style and depth metadata
+- Create screen now navigates to chat interface instead of direct generation
+- Generation flow uses conversation-derived parameters (style, depth, approved outline)
