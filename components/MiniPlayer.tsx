@@ -1,9 +1,9 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { StyleSheet, View, Pressable, Platform, ActivityIndicator } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -15,13 +15,24 @@ import { formatDuration } from "@/utils/podcastGenerator";
 const MINI_PLAYER_HEIGHT = 64;
 const TAB_BAR_HEIGHT = 49;
 
-export default function MiniPlayer() {
+interface MiniPlayerProps {
+  isOnPlayScreen?: boolean;
+}
+
+export default function MiniPlayer({ isOnPlayScreen = false }: MiniPlayerProps) {
   const { theme, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { currentPodcast, isPlaying, position, duration, isLoading, togglePlayPause } = useAudioPlayer();
+  const [isDismissed, setIsDismissed] = useState(false);
 
-  if (!currentPodcast) {
+  useEffect(() => {
+    if (currentPodcast) {
+      setIsDismissed(false);
+    }
+  }, [currentPodcast?.id]);
+
+  if (!currentPodcast || isDismissed || isOnPlayScreen) {
     return null;
   }
 
@@ -33,6 +44,11 @@ export default function MiniPlayer() {
   const handlePlayPause = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await togglePlayPause();
+  };
+
+  const handleDismiss = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsDismissed(true);
   };
 
   const progress = duration > 0 ? (position / duration) * 100 : 0;
@@ -90,6 +106,17 @@ export default function MiniPlayer() {
               style={isPlaying ? undefined : { marginLeft: 2 }}
             />
           )}
+        </Pressable>
+
+        <Pressable
+          onPress={handleDismiss}
+          style={({ pressed }) => [
+            styles.closeButton,
+            { opacity: pressed ? 0.5 : 1 }
+          ]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Feather name="x" size={18} color={theme.textSecondary} />
         </Pressable>
       </Pressable>
     </>
@@ -169,6 +196,12 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  closeButton: {
+    width: 28,
+    height: 28,
     alignItems: "center",
     justifyContent: "center",
   },
