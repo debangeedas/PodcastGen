@@ -66,9 +66,8 @@ export default function CreateScreen({ navigation }: CreateScreenProps) {
     }
 
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    navigation.navigate("Generating", { 
+    navigation.navigate("ChatCreation", { 
       topic: topic.trim(),
-      isSeries: podcastType === "series",
     });
   };
 
@@ -195,7 +194,7 @@ export default function CreateScreen({ navigation }: CreateScreenProps) {
       <Spacer height={Spacing.lg} />
 
       <Button onPress={handleGenerate} disabled={!topic.trim()}>
-        {podcastType === "single" ? "Generate Episode" : "Generate Series"}
+        Start Creating
       </Button>
 
       <Spacer height={Spacing["3xl"]} />
