@@ -91,10 +91,14 @@ npm run dev
 - Or access web version at http://localhost:8081
 
 ## Recent Changes
-- Added authentication flow with Apple Sign-In (iOS) and guest mode fallback
-- Login prompt appears when clicking "Start Creating" if not authenticated
-- Profile screen shows account info with sign-in/sign-out options
+- Enhanced authentication with multiple sign-in options:
+  - Apple Sign-In (iOS only)
+  - Email/Password sign-up and sign-in (all platforms)
+  - Guest mode (all platforms)
+- Login prompt redesigned with sign-in/sign-up toggle for email auth
+- Profile screen shows auth method used (Apple, Email, Guest)
 - AuthContext manages global auth state with AsyncStorage persistence
+- Email accounts stored locally with basic validation
 - Added "Play" tab with persistent mini player bar across all screens (like Spotify)
 - Mini player hides on Play screen, reappears when pressing play
 - AudioPlayerContext provides global playback state management
@@ -105,3 +109,8 @@ npm run dev
 - Choosing "Single episode" creates one focused episode
 - Choosing "Multi-part series" triggers series flow with episode plan approval
 - Quick-reply chips for fast topic refinement
+
+## Notes
+- Email/password authentication stores accounts locally for demo purposes
+- For production, integrate with a backend auth service like Firebase
+- Google Sign-In requires OAuth client IDs from Google Cloud Console

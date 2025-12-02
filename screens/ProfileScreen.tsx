@@ -9,7 +9,7 @@ import Constants from "expo-constants";
 import { ScreenKeyboardAwareScrollView } from "@/components/ScreenKeyboardAwareScrollView";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth, AuthMethod } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius, Typography, Colors } from "@/constants/theme";
 import Spacer from "@/components/Spacer";
 import {
@@ -19,6 +19,7 @@ import {
   defaultSettings,
   clearAllData,
 } from "@/utils/storage";
+import LoginPrompt from "@/components/LoginPrompt";
 
 const AVATARS = [
   { icon: "mic" as const, label: "Microphone" },
@@ -41,9 +42,32 @@ const VOICE_OPTIONS = [
   { value: "shimmer" as const, label: "Shimmer (Clear)" },
 ];
 
+const getAuthMethodLabel = (method: AuthMethod | undefined): string => {
+  switch (method) {
+    case "apple":
+      return "Signed in with Apple";
+    case "email":
+      return "Signed in with Email";
+    case "guest":
+      return "Guest Account";
+    default:
+      return "Signed in";
+  }
+};
+
+const getAuthMethodIcon = (method: AuthMethod | undefined): "user" | "mail" => {
+  switch (method) {
+    case "email":
+      return "mail";
+    default:
+      return "user";
+  }
+};
+
 export default function ProfileScreen() {
   const { theme, isDark } = useTheme();
   const { user, isAuthenticated, signInWithApple, signOut, isAppleAuthAvailable } = useAuth();
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -131,15 +155,15 @@ export default function ProfileScreen() {
       {isAuthenticated && user ? (
         <View style={[styles.settingCard, { backgroundColor: theme.backgroundDefault }]}>
           <View style={styles.userInfo}>
-            <View style={[styles.userAvatar, { backgroundColor: theme.primary }]}>
-              <Feather name="user" size={24} color="#FFFFFF" />
+            <View style={[styles.userAvatar, { backgroundColor: user.authMethod === "guest" ? theme.backgroundSecondary : theme.primary }]}>
+              <Feather name={getAuthMethodIcon(user.authMethod)} size={24} color={user.authMethod === "guest" ? theme.textSecondary : "#FFFFFF"} />
             </View>
             <View style={styles.userDetails}>
               <ThemedText type="body" style={{ fontWeight: "600" }}>
                 {user.fullName || "Podcast Creator"}
               </ThemedText>
               <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-                {user.email || "Signed in with Apple"}
+                {user.email || getAuthMethodLabel(user.authMethod)}
               </ThemedText>
             </View>
           </View>
@@ -174,28 +198,31 @@ export default function ProfileScreen() {
               </ThemedText>
             </View>
           </View>
-          {Platform.OS === "ios" && isAppleAuthAvailable ? (
-            <AppleAuthentication.AppleAuthenticationButton
-              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-              buttonStyle={
-                isDark
-                  ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
-                  : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
-              }
-              cornerRadius={BorderRadius.sm}
-              style={styles.appleSignInButton}
-              onPress={handleSignIn}
-            />
-          ) : (
-            <View style={[styles.webNotice, { backgroundColor: theme.backgroundSecondary }]}>
-              <Feather name="smartphone" size={16} color={theme.primary} />
-              <ThemedText type="small" style={{ color: theme.textSecondary, marginLeft: Spacing.sm, flex: 1 }}>
-                Sign in with Apple is available on iOS
-              </ThemedText>
-            </View>
-          )}
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setShowLoginPrompt(true);
+            }}
+            style={({ pressed }) => [
+              styles.signInButton,
+              {
+                backgroundColor: theme.primary,
+                opacity: pressed ? 0.8 : 1,
+              },
+            ]}
+          >
+            <ThemedText type="body" style={{ color: "#FFFFFF", fontWeight: "600" }}>
+              Sign In
+            </ThemedText>
+          </Pressable>
         </View>
       )}
+      
+      <LoginPrompt
+        visible={showLoginPrompt}
+        onClose={() => setShowLoginPrompt(false)}
+        onSuccess={() => setShowLoginPrompt(false)}
+      />
 
       <Spacer height={Spacing["3xl"]} />
 
@@ -521,5 +548,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: Spacing.md,
     borderRadius: BorderRadius.sm,
+  },
+  signInButton: {
+    width: "100%",
+    height: 44,
+    borderRadius: BorderRadius.sm,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

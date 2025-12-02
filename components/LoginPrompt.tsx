@@ -6,9 +6,11 @@ import {
   Pressable,
   Platform,
   ActivityIndicator,
+  TextInput,
+  KeyboardAvoidingView,
+  ScrollView,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Haptics from "expo-haptics";
 
@@ -23,13 +25,44 @@ interface LoginPromptProps {
   onSuccess: () => void;
 }
 
+type AuthMode = "options" | "email-signin" | "email-signup";
+
 export default function LoginPrompt({ visible, onClose, onSuccess }: LoginPromptProps) {
   const { theme, isDark } = useTheme();
-  const { signInWithApple, isAppleAuthAvailable } = useAuth();
+  const { 
+    signInWithApple, 
+    signInWithEmail,
+    signUpWithEmail,
+    continueAsGuest,
+    isAppleAuthAvailable,
+  } = useAuth();
+  
   const [isLoading, setIsLoading] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>("options");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const resetForm = () => {
+    setEmail("");
+    setPassword("");
+    setFullName("");
+    setErrorMessage(null);
+    setShowPassword(false);
+  };
+
+  const handleClose = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setAuthMode("options");
+    resetForm();
+    onClose();
+  };
 
   const handleAppleSignIn = async () => {
     setIsLoading(true);
+    setErrorMessage(null);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
     const success = await signInWithApple();
@@ -37,13 +70,282 @@ export default function LoginPrompt({ visible, onClose, onSuccess }: LoginPrompt
     
     if (success) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onClose();
       onSuccess();
     }
   };
 
-  const handleClose = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onClose();
+  const handleEmailSignIn = async () => {
+    if (!email.trim() || !password.trim()) {
+      setErrorMessage("Please fill in all fields.");
+      return;
+    }
+    
+    setIsLoading(true);
+    setErrorMessage(null);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    const result = await signInWithEmail(email.trim(), password);
+    setIsLoading(false);
+    
+    if (result.success) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      resetForm();
+      setAuthMode("options");
+      onClose();
+      onSuccess();
+    } else {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setErrorMessage(result.error || "Sign in failed.");
+    }
+  };
+
+  const handleEmailSignUp = async () => {
+    if (!email.trim() || !password.trim() || !fullName.trim()) {
+      setErrorMessage("Please fill in all fields.");
+      return;
+    }
+    
+    setIsLoading(true);
+    setErrorMessage(null);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    const result = await signUpWithEmail(email.trim(), password, fullName.trim());
+    setIsLoading(false);
+    
+    if (result.success) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      resetForm();
+      setAuthMode("options");
+      onClose();
+      onSuccess();
+    } else {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setErrorMessage(result.error || "Sign up failed.");
+    }
+  };
+
+  const handleGuestContinue = async () => {
+    setIsLoading(true);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    const success = await continueAsGuest();
+    setIsLoading(false);
+    
+    if (success) {
+      onClose();
+      onSuccess();
+    }
+  };
+
+  const renderAuthOptions = () => (
+    <>
+      <View style={[styles.iconContainer, { backgroundColor: theme.primary + "20" }]}>
+        <Feather name="user" size={40} color={theme.primary} />
+      </View>
+
+      <ThemedText type="h2" style={styles.title}>
+        Sign in to Continue
+      </ThemedText>
+
+      <ThemedText
+        type="body"
+        style={[styles.description, { color: theme.textSecondary }]}
+      >
+        Create an account to generate podcasts and save your favorites.
+      </ThemedText>
+
+      <View style={styles.authOptionsContainer}>
+        {Platform.OS === "ios" && isAppleAuthAvailable ? (
+          <AppleAuthentication.AppleAuthenticationButton
+            buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+            buttonStyle={
+              isDark
+                ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+            }
+            cornerRadius={BorderRadius.md}
+            style={styles.authButton}
+            onPress={handleAppleSignIn}
+          />
+        ) : null}
+
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setAuthMode("email-signin");
+          }}
+          style={({ pressed }) => [
+            styles.socialButton,
+            {
+              backgroundColor: theme.backgroundSecondary,
+              borderColor: theme.backgroundTertiary,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Feather name="mail" size={20} color={theme.text} style={styles.buttonIcon} />
+          <ThemedText type="body" style={{ fontWeight: "600", flex: 1, textAlign: "center" }}>
+            Continue with Email
+          </ThemedText>
+        </Pressable>
+
+        <View style={styles.dividerContainer}>
+          <View style={[styles.divider, { backgroundColor: theme.backgroundTertiary }]} />
+          <ThemedText type="small" style={{ color: theme.textSecondary, marginHorizontal: Spacing.md }}>
+            or
+          </ThemedText>
+          <View style={[styles.divider, { backgroundColor: theme.backgroundTertiary }]} />
+        </View>
+
+        <Pressable
+          onPress={handleGuestContinue}
+          style={({ pressed }) => [
+            styles.guestButton,
+            {
+              borderColor: theme.backgroundTertiary,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <ThemedText type="body" style={{ color: theme.textSecondary }}>
+            Continue as Guest
+          </ThemedText>
+        </Pressable>
+      </View>
+    </>
+  );
+
+  const renderEmailForm = () => {
+    const isSignUp = authMode === "email-signup";
+    
+    return (
+      <>
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setAuthMode("options");
+            resetForm();
+          }}
+          style={styles.backButton}
+          hitSlop={12}
+        >
+          <Feather name="arrow-left" size={24} color={theme.textSecondary} />
+        </Pressable>
+
+        <View style={[styles.iconContainer, { backgroundColor: theme.primary + "20", marginTop: Spacing.lg }]}>
+          <Feather name="mail" size={40} color={theme.primary} />
+        </View>
+
+        <ThemedText type="h2" style={styles.title}>
+          {isSignUp ? "Create Account" : "Sign In"}
+        </ThemedText>
+
+        <ThemedText
+          type="body"
+          style={[styles.description, { color: theme.textSecondary }]}
+        >
+          {isSignUp 
+            ? "Enter your details to create an account."
+            : "Enter your email and password to sign in."}
+        </ThemedText>
+
+        {errorMessage ? (
+          <View style={[styles.errorContainer, { backgroundColor: theme.secondary + "20" }]}>
+            <Feather name="alert-circle" size={16} color={theme.secondary} />
+            <ThemedText type="small" style={{ color: theme.secondary, flex: 1, marginLeft: Spacing.sm }}>
+              {errorMessage}
+            </ThemedText>
+          </View>
+        ) : null}
+
+        <View style={styles.formContainer}>
+          {isSignUp ? (
+            <View style={[styles.inputContainer, { backgroundColor: theme.backgroundSecondary, borderColor: theme.backgroundTertiary }]}>
+              <Feather name="user" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+              <TextInput
+                value={fullName}
+                onChangeText={setFullName}
+                placeholder="Full Name"
+                placeholderTextColor={theme.textSecondary}
+                style={[styles.input, { color: theme.text }]}
+                autoCapitalize="words"
+                autoComplete="name"
+              />
+            </View>
+          ) : null}
+
+          <View style={[styles.inputContainer, { backgroundColor: theme.backgroundSecondary, borderColor: theme.backgroundTertiary }]}>
+            <Feather name="mail" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              placeholder="Email"
+              placeholderTextColor={theme.textSecondary}
+              style={[styles.input, { color: theme.text }]}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoComplete="email"
+            />
+          </View>
+
+          <View style={[styles.inputContainer, { backgroundColor: theme.backgroundSecondary, borderColor: theme.backgroundTertiary }]}>
+            <Feather name="lock" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Password"
+              placeholderTextColor={theme.textSecondary}
+              style={[styles.input, { color: theme.text }]}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoComplete={isSignUp ? "new-password" : "current-password"}
+            />
+            <Pressable
+              onPress={() => setShowPassword(!showPassword)}
+              hitSlop={8}
+            >
+              <Feather 
+                name={showPassword ? "eye-off" : "eye"} 
+                size={20} 
+                color={theme.textSecondary} 
+              />
+            </Pressable>
+          </View>
+
+          <Pressable
+            onPress={isSignUp ? handleEmailSignUp : handleEmailSignIn}
+            style={({ pressed }) => [
+              styles.submitButton,
+              {
+                backgroundColor: theme.primary,
+                opacity: pressed ? 0.8 : 1,
+              },
+            ]}
+          >
+            <ThemedText type="body" style={{ color: "#FFFFFF", fontWeight: "600" }}>
+              {isSignUp ? "Create Account" : "Sign In"}
+            </ThemedText>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setAuthMode(isSignUp ? "email-signin" : "email-signup");
+              setErrorMessage(null);
+            }}
+            style={styles.switchModeButton}
+          >
+            <ThemedText type="body" style={{ color: theme.textSecondary }}>
+              {isSignUp ? "Already have an account? " : "Don't have an account? "}
+              <ThemedText type="body" style={{ color: theme.primary, fontWeight: "600" }}>
+                {isSignUp ? "Sign In" : "Sign Up"}
+              </ThemedText>
+            </ThemedText>
+          </Pressable>
+        </View>
+      </>
+    );
   };
 
   return (
@@ -53,103 +355,55 @@ export default function LoginPrompt({ visible, onClose, onSuccess }: LoginPrompt
       animationType="fade"
       onRequestClose={handleClose}
     >
-      <Pressable style={styles.overlay} onPress={handleClose}>
-        <Pressable style={styles.preventClose} onPress={(e) => e.stopPropagation()}>
-          <View
-            style={[
-              styles.container,
-              { backgroundColor: theme.backgroundDefault },
-            ]}
-          >
-            <Pressable
-              onPress={handleClose}
-              style={({ pressed }) => [
-                styles.closeButton,
-                { opacity: pressed ? 0.5 : 1 },
-              ]}
-              hitSlop={12}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.keyboardView}
+      >
+        <Pressable style={styles.overlay} onPress={handleClose}>
+          <Pressable style={styles.preventClose} onPress={(e) => e.stopPropagation()}>
+            <ScrollView 
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
             >
-              <Feather name="x" size={24} color={theme.textSecondary} />
-            </Pressable>
-
-            <View style={[styles.iconContainer, { backgroundColor: theme.primary + "20" }]}>
-              <Feather name="user" size={40} color={theme.primary} />
-            </View>
-
-            <ThemedText type="h2" style={styles.title}>
-              Sign in to Continue
-            </ThemedText>
-
-            <ThemedText
-              type="body"
-              style={[styles.description, { color: theme.textSecondary }]}
-            >
-              Create an account to generate podcasts and save your favorites.
-            </ThemedText>
-
-            {Platform.OS === "ios" && isAppleAuthAvailable ? (
-              <AppleAuthentication.AppleAuthenticationButton
-                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                buttonStyle={
-                  isDark
-                    ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
-                    : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
-                }
-                cornerRadius={BorderRadius.md}
-                style={styles.appleButton}
-                onPress={handleAppleSignIn}
-              />
-            ) : (
-              <View style={styles.fallbackContainer}>
-                <View
-                  style={[
-                    styles.infoCard,
-                    { backgroundColor: theme.backgroundSecondary },
-                  ]}
-                >
-                  <Feather name="smartphone" size={20} color={theme.primary} />
-                  <ThemedText
-                    type="small"
-                    style={[styles.infoText, { color: theme.textSecondary }]}
-                  >
-                    Sign in with Apple is available on iOS. You can continue as a guest or use this app in Expo Go on your iPhone.
-                  </ThemedText>
-                </View>
-                
+              <View
+                style={[
+                  styles.container,
+                  { backgroundColor: theme.backgroundDefault },
+                ]}
+              >
                 <Pressable
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    onClose();
-                    onSuccess();
-                  }}
+                  onPress={handleClose}
                   style={({ pressed }) => [
-                    styles.continueButton,
-                    {
-                      backgroundColor: theme.primary,
-                      opacity: pressed ? 0.8 : 1,
-                    },
+                    styles.closeButton,
+                    { opacity: pressed ? 0.5 : 1 },
                   ]}
+                  hitSlop={12}
                 >
-                  <ThemedText type="body" style={{ color: "#FFFFFF", fontWeight: "600" }}>
-                    Continue as Guest
-                  </ThemedText>
+                  <Feather name="x" size={24} color={theme.textSecondary} />
                 </Pressable>
-              </View>
-            )}
 
-            {isLoading ? (
-              <View style={styles.loadingOverlay}>
-                <ActivityIndicator size="large" color={theme.primary} />
+                {authMode === "options" ? renderAuthOptions() : renderEmailForm()}
+
+                {isLoading ? (
+                  <View style={styles.loadingOverlay}>
+                    <ActivityIndicator size="large" color={theme.primary} />
+                  </View>
+                ) : null}
               </View>
-            ) : null}
-          </View>
+            </ScrollView>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardView: {
+    flex: 1,
+  },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -160,6 +414,13 @@ const styles = StyleSheet.create({
   preventClose: {
     width: "100%",
     maxWidth: 400,
+    maxHeight: "90%",
+  },
+  scrollView: {
+    flexGrow: 0,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   container: {
     borderRadius: BorderRadius.lg,
@@ -170,6 +431,12 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: Spacing.md,
     right: Spacing.md,
+    zIndex: 1,
+  },
+  backButton: {
+    position: "absolute",
+    top: Spacing.md,
+    left: Spacing.md,
     zIndex: 1,
   },
   iconContainer: {
@@ -189,30 +456,83 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: Spacing.xl,
   },
-  appleButton: {
+  authOptionsContainer: {
+    width: "100%",
+    gap: Spacing.md,
+  },
+  authButton: {
     width: "100%",
     height: 50,
   },
-  fallbackContainer: {
+  socialButton: {
     width: "100%",
-    gap: Spacing.lg,
-  },
-  infoCard: {
+    height: 50,
+    borderRadius: BorderRadius.md,
     flexDirection: "row",
-    padding: Spacing.md,
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+    borderWidth: 1,
+  },
+  buttonIcon: {
+    position: "absolute",
+    left: Spacing.lg,
+  },
+  dividerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: Spacing.sm,
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+  },
+  guestButton: {
+    width: "100%",
+    height: 44,
     borderRadius: BorderRadius.md,
     alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  formContainer: {
+    width: "100%",
     gap: Spacing.md,
   },
-  infoText: {
-    flex: 1,
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: 50,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    borderWidth: 1,
   },
-  continueButton: {
+  inputIcon: {
+    marginRight: Spacing.sm,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    height: "100%",
+  },
+  submitButton: {
     width: "100%",
     height: 50,
     borderRadius: BorderRadius.md,
     alignItems: "center",
     justifyContent: "center",
+    marginTop: Spacing.sm,
+  },
+  switchModeButton: {
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+  },
+  errorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.md,
+    width: "100%",
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
