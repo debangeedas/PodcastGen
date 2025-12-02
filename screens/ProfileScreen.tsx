@@ -46,6 +46,8 @@ const getAuthMethodLabel = (method: AuthMethod | undefined): string => {
   switch (method) {
     case "apple":
       return "Signed in with Apple";
+    case "google":
+      return "Signed in with Google";
     case "email":
       return "Signed in with Email";
     case "guest":

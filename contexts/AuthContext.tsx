@@ -1,12 +1,17 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as AppleAuthentication from "expo-apple-authentication";
+import * as Google from "expo-auth-session/providers/google";
+import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
+import Constants from "expo-constants";
+
+WebBrowser.maybeCompleteAuthSession();
 
 const AUTH_USER_KEY = "@auth_user";
 const EMAIL_ACCOUNTS_KEY = "@email_accounts";
 
-export type AuthMethod = "apple" | "email" | "guest";
+export type AuthMethod = "apple" | "google" | "email" | "guest";
 
 export interface AuthUser {
   id: string;
@@ -27,7 +32,10 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   isAppleAuthAvailable: boolean;
+  isGoogleAuthAvailable: boolean;
+  googleRequest: Google.GoogleAuthRequestConfig | null;
   signInWithApple: () => Promise<boolean>;
+  signInWithGoogle: () => Promise<boolean>;
   signInWithEmail: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signUpWithEmail: (email: string, password: string, fullName: string) => Promise<{ success: boolean; error?: string }>;
   continueAsGuest: () => Promise<boolean>;
@@ -41,10 +49,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isAppleAuthAvailable, setIsAppleAuthAvailable] = useState(false);
 
+  const googleClientId = Constants.expoConfig?.extra?.googleClientId || 
+    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || "";
+  
+  const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
+    webClientId: googleClientId,
+    iosClientId: googleClientId,
+    androidClientId: googleClientId,
+  });
+
+  const isGoogleAuthAvailable = !!googleClientId && !!googleRequest;
+
   useEffect(() => {
     loadUser();
     checkAppleAuthAvailability();
   }, []);
+
+  useEffect(() => {
+    if (googleResponse?.type === "success") {
+      handleGoogleResponse(googleResponse);
+    }
+  }, [googleResponse]);
 
   const checkAppleAuthAvailability = async () => {
     if (Platform.OS === "ios") {
@@ -54,6 +79,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsAppleAuthAvailable(false);
     }
   };
+
+  const handleGoogleResponse = async (response: ReturnType<typeof Google.useAuthRequest>[1]) => {
+    if (response?.type === "success" && response.authentication?.accessToken) {
+      try {
+        const userInfoResponse = await fetch(
+          "https://www.googleapis.com/userinfo/v2/me",
+          {
+            headers: { Authorization: `Bearer ${response.authentication.accessToken}` },
+          }
+        );
+        const userInfo = await userInfoResponse.json();
+        
+        const authUser: AuthUser = {
+          id: `google_${userInfo.id}`,
+          email: userInfo.email || null,
+          fullName: userInfo.name || null,
+          authMethod: "google",
+          photoUrl: userInfo.picture || null,
+        };
+        
+        await saveUser(authUser);
+      } catch (error) {
+        console.error("Error fetching Google user info:", error);
+      }
+    }
+  };
+
+  const signInWithGoogle = useCallback(async (): Promise<boolean> => {
+    try {
+      if (!googlePromptAsync) {
+        console.error("Google auth not available");
+        return false;
+      }
+      
+      const result = await googlePromptAsync();
+      return result.type === "success";
+    } catch (error) {
+      console.error("Google sign-in error:", error);
+      return false;
+    }
+  }, [googlePromptAsync]);
 
   const loadUser = async () => {
     try {
@@ -240,7 +306,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user,
         isLoading,
         isAppleAuthAvailable,
+        isGoogleAuthAvailable,
+        googleRequest: googleRequest as Google.GoogleAuthRequestConfig | null,
         signInWithApple,
+        signInWithGoogle,
         signInWithEmail,
         signUpWithEmail,
         continueAsGuest,

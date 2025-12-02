@@ -31,10 +31,12 @@ export default function LoginPrompt({ visible, onClose, onSuccess }: LoginPrompt
   const { theme, isDark } = useTheme();
   const { 
     signInWithApple, 
+    signInWithGoogle,
     signInWithEmail,
     signUpWithEmail,
     continueAsGuest,
     isAppleAuthAvailable,
+    isGoogleAuthAvailable,
   } = useAuth();
   
   const [isLoading, setIsLoading] = useState(false);
@@ -66,6 +68,21 @@ export default function LoginPrompt({ visible, onClose, onSuccess }: LoginPrompt
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
     const success = await signInWithApple();
+    setIsLoading(false);
+    
+    if (success) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onClose();
+      onSuccess();
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    const success = await signInWithGoogle();
     setIsLoading(false);
     
     if (success) {
@@ -168,6 +185,27 @@ export default function LoginPrompt({ visible, onClose, onSuccess }: LoginPrompt
             style={styles.authButton}
             onPress={handleAppleSignIn}
           />
+        ) : null}
+
+        {isGoogleAuthAvailable ? (
+          <Pressable
+            onPress={handleGoogleSignIn}
+            style={({ pressed }) => [
+              styles.socialButton,
+              {
+                backgroundColor: theme.backgroundSecondary,
+                borderColor: theme.backgroundTertiary,
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+          >
+            <View style={styles.googleIconContainer}>
+              <ThemedText style={styles.googleIcon}>G</ThemedText>
+            </View>
+            <ThemedText type="body" style={{ fontWeight: "600", flex: 1, textAlign: "center" }}>
+              Continue with Google
+            </ThemedText>
+          </Pressable>
         ) : null}
 
         <Pressable
@@ -476,6 +514,21 @@ const styles = StyleSheet.create({
   buttonIcon: {
     position: "absolute",
     left: Spacing.lg,
+  },
+  googleIconContainer: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#4285F4",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "absolute",
+    left: Spacing.lg,
+  },
+  googleIcon: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
   dividerContainer: {
     flexDirection: "row",
