@@ -104,35 +104,66 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
 
   const renderWelcome = () => (
     <View style={styles.stepContainer}>
-      <View style={[styles.iconContainer, { backgroundColor: theme.primary + "20" }]}>
-        <Feather name="headphones" size={64} color={theme.primary} />
+      <View style={styles.welcomeHeader}>
+        <View style={[styles.iconContainer, { backgroundColor: theme.primary + "15" }]}>
+          <Feather name="headphones" size={56} color={theme.primary} />
+        </View>
+
+        <ThemedText type="h2" style={styles.title}>
+          Welcome to PodcastGen
+        </ThemedText>
+
+        <ThemedText type="body" style={[styles.description, { color: theme.textSecondary }]}>
+          Your personal AI podcast studio
+        </ThemedText>
       </View>
 
-      <ThemedText type="h2" style={styles.title}>
-        Welcome to PodcastGen
-      </ThemedText>
-
-      <ThemedText type="body" style={[styles.description, { color: theme.textSecondary }]}>
-        Create personalized AI-powered podcasts on any topic in seconds. Let's set up your preferences to get started.
-      </ThemedText>
-
-      <View style={styles.features}>
-        <View style={styles.feature}>
-          <Feather name="zap" size={20} color={theme.primary} />
-          <ThemedText type="body" style={styles.featureText}>
-            Generate podcasts instantly
+      <View style={styles.featuresGrid}>
+        <View style={[styles.featureCard, { backgroundColor: theme.backgroundSecondary }]}>
+          <View style={[styles.featureIconContainer, { backgroundColor: theme.primary + "15" }]}>
+            <Feather name="zap" size={28} color={theme.primary} />
+          </View>
+          <ThemedText type="h4" style={styles.featureTitle}>
+            Instant Creation
+          </ThemedText>
+          <ThemedText type="caption" style={[styles.featureDescription, { color: theme.textSecondary }]}>
+            Generate high-quality podcasts in seconds with AI
           </ThemedText>
         </View>
-        <View style={styles.feature}>
-          <Feather name="mic" size={20} color={theme.primary} />
-          <ThemedText type="body" style={styles.featureText}>
-            Choose your narrator voice
+
+        <View style={[styles.featureCard, { backgroundColor: theme.backgroundSecondary }]}>
+          <View style={[styles.featureIconContainer, { backgroundColor: theme.primary + "15" }]}>
+            <Feather name="mic" size={28} color={theme.primary} />
+          </View>
+          <ThemedText type="h4" style={styles.featureTitle}>
+            Custom Voices
+          </ThemedText>
+          <ThemedText type="caption" style={[styles.featureDescription, { color: theme.textSecondary }]}>
+            Choose from multiple professional narrator voices
           </ThemedText>
         </View>
-        <View style={styles.feature}>
-          <Feather name="sliders" size={20} color={theme.primary} />
-          <ThemedText type="body" style={styles.featureText}>
-            Customize length and style
+
+        <View style={[styles.featureCard, { backgroundColor: theme.backgroundSecondary }]}>
+          <View style={[styles.featureIconContainer, { backgroundColor: theme.primary + "15" }]}>
+            <Feather name="sliders" size={28} color={theme.primary} />
+          </View>
+          <ThemedText type="h4" style={styles.featureTitle}>
+            Full Control
+          </ThemedText>
+          <ThemedText type="caption" style={[styles.featureDescription, { color: theme.textSecondary }]}>
+            Customize length, tone, and style to fit your needs
+          </ThemedText>
+        </View>
+
+        <View style={[styles.featureCard, { backgroundColor: theme.backgroundSecondary }]}>
+          <View style={[styles.featureIconContainer, { backgroundColor: theme.primary + "15" }]}>
+            <Feather name="smartphone" size={28} color={theme.primary} />
+          </View>
+          <ThemedText type="h4" style={styles.featureTitle}>
+            On the Go
+          </ThemedText>
+          <ThemedText type="caption" style={[styles.featureDescription, { color: theme.textSecondary }]}>
+            Create and listen anywhere, anytime
           </ThemedText>
         </View>
       </View>
@@ -432,34 +463,60 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
   },
+  welcomeHeader: {
+    alignItems: "center",
+    marginBottom: Spacing["3xl"],
+  },
   iconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     alignItems: "center",
     justifyContent: "center",
-    alignSelf: "center",
-    marginBottom: Spacing["2xl"],
+    marginBottom: Spacing.xl,
   },
   title: {
     textAlign: "center",
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.xs,
+    fontSize: 28,
+    fontWeight: "700",
   },
   description: {
     textAlign: "center",
-    marginBottom: Spacing["2xl"],
-    lineHeight: 24,
+    fontSize: 16,
+    lineHeight: 22,
   },
-  features: {
-    gap: Spacing.lg,
-  },
-  feature: {
+  featuresGrid: {
     flexDirection: "row",
-    alignItems: "center",
+    flexWrap: "wrap",
     gap: Spacing.md,
+    justifyContent: "space-between",
   },
-  featureText: {
-    flex: 1,
+  featureCard: {
+    width: "48%",
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    alignItems: "center",
+    minHeight: 140,
+    justifyContent: "center",
+  },
+  featureIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Spacing.md,
+  },
+  featureTitle: {
+    textAlign: "center",
+    marginBottom: Spacing.xs,
+    fontWeight: "600",
+  },
+  featureDescription: {
+    textAlign: "center",
+    fontSize: 12,
+    lineHeight: 16,
   },
   stepTitle: {
     textAlign: "center",
