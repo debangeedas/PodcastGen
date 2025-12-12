@@ -15,7 +15,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import LoginPrompt from "@/components/LoginPrompt";
 import { useTheme } from "@/hooks/useTheme";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/AuthContext.firebase";
 import { Spacing, BorderRadius, Typography } from "@/constants/theme";
 import Spacer from "@/components/Spacer";
 import { CreateStackParamList } from "@/navigation/CreateStackNavigator";
@@ -31,10 +31,7 @@ type CreateScreenProps = {
 const QUICK_TOPICS = [
   "What is quantum computing?",
   "The French Revolution",
-  "How does photosynthesis work?",
-  "History of Ancient Rome",
-  "Explain blockchain technology",
-  "The Renaissance Era",
+  "The history of jazz music",
 ];
 
 export default function CreateScreen({ navigation }: CreateScreenProps) {
@@ -100,7 +97,7 @@ export default function CreateScreen({ navigation }: CreateScreenProps) {
 
   return (
     <ScreenKeyboardAwareScrollView>
-      <Spacer height={Spacing.lg} />
+      <Spacer height={Spacing.sm} />
 
       <ThemedText type="h1" style={styles.heading}>
         Create a Podcast

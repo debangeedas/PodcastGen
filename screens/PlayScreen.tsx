@@ -1,5 +1,5 @@
 import React, { useRef, useMemo, useEffect, useState } from "react";
-import { StyleSheet, View, Pressable, ScrollView, Modal, Platform, Alert } from "react-native";
+import { StyleSheet, View, Pressable, ScrollView, Modal, Platform, Alert, Linking } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as Sharing from "expo-sharing";
@@ -13,7 +13,7 @@ import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { formatDuration } from "@/utils/podcastGenerator";
 import { AnimatedWaveform } from "@/components/AnimatedWaveform";
-import { deletePodcast } from "@/utils/storage";
+import { deletePodcast, Source } from "@/utils/storage";
 import { useNavigation } from "@react-navigation/native";
 
 interface Sentence {
@@ -221,17 +221,55 @@ export default function PlayScreen() {
       </ScrollView>
 
       <View style={[styles.bottomBar, { backgroundColor: theme.backgroundDefault, paddingBottom: Math.max(insets.bottom, Spacing.xl) + 60 }]}>
-        <View style={styles.titleSection}>
-          <ThemedText style={styles.titleText} numberOfLines={2}>
-            {currentPodcast.topic}
-          </ThemedText>
-          <View style={styles.timeDisplay}>
-            <ThemedText style={[styles.currentTime, { color: theme.primary }]}>
-              {formatDuration(position)}
+        <View style={styles.topRow}>
+          <View style={styles.titleSection}>
+            <ThemedText style={styles.titleText} numberOfLines={2}>
+              {currentPodcast.topic}
             </ThemedText>
-            <ThemedText style={[styles.totalTime, { color: theme.textSecondary }]}>
-              {" / "}{formatDuration(duration)}
-            </ThemedText>
+            <View style={styles.timeDisplay}>
+              <ThemedText style={[styles.currentTime, { color: theme.primary }]}>
+                {formatDuration(position)}
+              </ThemedText>
+              <ThemedText style={[styles.totalTime, { color: theme.textSecondary }]}>
+                {" / "}{formatDuration(duration)}
+              </ThemedText>
+            </View>
+          </View>
+
+          <View style={styles.controlsRow}>
+            <Pressable
+              onPress={() => handleSkip(-15)}
+              style={({ pressed }) => [styles.skipButton, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Feather name="rotate-ccw" size={20} color={theme.text} />
+              <ThemedText style={styles.skipLabel}>15</ThemedText>
+            </Pressable>
+
+            <Pressable
+              onPress={handlePlayPause}
+              style={({ pressed }) => [
+                styles.playButton,
+                {
+                  backgroundColor: theme.primary,
+                  transform: [{ scale: pressed ? 0.95 : 1 }],
+                },
+              ]}
+            >
+              <Feather
+                name={isPlaying ? "pause" : "play"}
+                size={22}
+                color="#FFFFFF"
+                style={isPlaying ? undefined : { marginLeft: 2 }}
+              />
+            </Pressable>
+
+            <Pressable
+              onPress={() => handleSkip(15)}
+              style={({ pressed }) => [styles.skipButton, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Feather name="rotate-cw" size={20} color={theme.text} />
+              <ThemedText style={styles.skipLabel}>15</ThemedText>
+            </Pressable>
           </View>
         </View>
 
@@ -249,42 +287,6 @@ export default function PlayScreen() {
           maximumTrackTintColor={theme.backgroundSecondary}
           thumbTintColor={theme.primary}
         />
-
-        <View style={styles.controlsRow}>
-          <Pressable
-            onPress={() => handleSkip(-15)}
-            style={({ pressed }) => [styles.skipButton, { opacity: pressed ? 0.7 : 1 }]}
-          >
-            <Feather name="rotate-ccw" size={24} color={theme.text} />
-            <ThemedText style={styles.skipLabel}>15</ThemedText>
-          </Pressable>
-
-          <Pressable
-            onPress={handlePlayPause}
-            style={({ pressed }) => [
-              styles.playButton,
-              {
-                backgroundColor: theme.primary,
-                transform: [{ scale: pressed ? 0.95 : 1 }],
-              },
-            ]}
-          >
-            <Feather
-              name={isPlaying ? "pause" : "play"}
-              size={28}
-              color="#FFFFFF"
-              style={isPlaying ? undefined : { marginLeft: 3 }}
-            />
-          </Pressable>
-
-          <Pressable
-            onPress={() => handleSkip(15)}
-            style={({ pressed }) => [styles.skipButton, { opacity: pressed ? 0.7 : 1 }]}
-          >
-            <Feather name="rotate-cw" size={24} color={theme.text} />
-            <ThemedText style={styles.skipLabel}>15</ThemedText>
-          </Pressable>
-        </View>
 
         <View style={styles.actionsRow}>
           <Pressable
@@ -359,17 +361,51 @@ export default function PlayScreen() {
 
             <ScrollView style={styles.sourcesList}>
               {currentPodcast.sources && currentPodcast.sources.length > 0 ? (
-                currentPodcast.sources.map((source, index) => (
-                  <View 
-                    key={index} 
-                    style={[styles.sourceItem, { backgroundColor: theme.backgroundSecondary }]}
-                  >
-                    <View style={[styles.sourceNumber, { backgroundColor: theme.primary }]}>
-                      <ThemedText style={styles.sourceNumberText}>{index + 1}</ThemedText>
-                    </View>
-                    <ThemedText style={styles.sourceText}>{source}</ThemedText>
-                  </View>
-                ))
+                currentPodcast.sources.map((source, index) => {
+                  const isSourceObject = typeof source === 'object' && 'url' in source;
+                  const sourceTitle = isSourceObject ? source.title : source;
+                  const sourceUrl = isSourceObject ? source.url : null;
+                  
+                  return (
+                    <Pressable
+                      key={index}
+                      onPress={async () => {
+                        if (sourceUrl) {
+                          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          const canOpen = await Linking.canOpenURL(sourceUrl);
+                          if (canOpen) {
+                            await Linking.openURL(sourceUrl);
+                          } else {
+                            Alert.alert("Error", "Unable to open this link.");
+                          }
+                        }
+                      }}
+                      disabled={!sourceUrl}
+                      style={({ pressed }) => [
+                        styles.sourceItem,
+                        {
+                          backgroundColor: theme.backgroundSecondary,
+                          opacity: sourceUrl ? (pressed ? 0.7 : 1) : 1,
+                        },
+                      ]}
+                    >
+                      <View style={[styles.sourceNumber, { backgroundColor: theme.primary }]}>
+                        <ThemedText style={styles.sourceNumberText}>{index + 1}</ThemedText>
+                      </View>
+                      <View style={styles.sourceContent}>
+                        <ThemedText style={styles.sourceText}>{sourceTitle}</ThemedText>
+                        {sourceUrl && (
+                          <View style={styles.sourceLinkContainer}>
+                            <Feather name="external-link" size={12} color={theme.primary} />
+                            <ThemedText style={[styles.sourceLink, { color: theme.primary }]}>
+                              Tap to view source
+                            </ThemedText>
+                          </View>
+                        )}
+                      </View>
+                    </Pressable>
+                  );
+                })
               ) : (
                 <ThemedText style={{ color: theme.textSecondary }}>
                   No sources available for this podcast.
@@ -413,9 +449,10 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   waveformContainer: {
-    height: 70,
+    height: 120,
     paddingHorizontal: Spacing.lg,
-    marginTop: Spacing.sm,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   lyricsContainer: {
     flex: 1,
@@ -455,25 +492,32 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 15,
   },
+  topRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: Spacing.sm,
+  },
   titleSection: {
-    marginBottom: Spacing.md,
+    flex: 1,
+    marginRight: Spacing.md,
   },
   titleText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "700",
-    lineHeight: 26,
-    marginBottom: Spacing.xs,
+    lineHeight: 24,
+    marginBottom: 4,
   },
   timeDisplay: {
     flexDirection: "row",
     alignItems: "baseline",
   },
   currentTime: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
   },
   totalTime: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "400",
   },
   slider: {
@@ -485,24 +529,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: Spacing["3xl"],
-    marginBottom: Spacing.lg,
+    gap: Spacing.sm,
   },
   skipButton: {
     alignItems: "center",
     justifyContent: "center",
-    width: 50,
-    height: 50,
+    width: 40,
+    height: 40,
   },
   skipLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "600",
-    marginTop: -4,
+    marginTop: -3,
   },
   playButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -592,9 +635,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
-  sourceText: {
+  sourceContent: {
     flex: 1,
+  },
+  sourceText: {
     fontSize: 15,
     lineHeight: 22,
+    marginBottom: Spacing.xs,
+  },
+  sourceLinkContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    marginTop: Spacing.xs,
+  },
+  sourceLink: {
+    fontSize: 12,
+    fontWeight: "500",
   },
 });

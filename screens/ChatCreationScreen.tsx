@@ -50,11 +50,17 @@ export default function ChatCreationScreen({ navigation, route }: ChatCreationSc
   const [state, setState] = useState<ConversationState | null>(null);
   const [inputText, setInputText] = useState("");
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const initConversation = async () => {
       const settings = await getSettings();
-      const initialState = createInitialState(topic, settings.preferredVoice);
+      const initialState = createInitialState(
+        topic,
+        settings.preferredVoice,
+        settings.preferredDepth,
+        settings.preferredTone
+      );
       setState(initialState);
       
       try {
@@ -71,8 +77,15 @@ export default function ChatCreationScreen({ navigation, route }: ChatCreationSc
         });
       } catch (error) {
         console.error("Error getting initial response:", error);
+        const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+        console.log("Full error details:", JSON.stringify(error, null, 2));
+        setError(errorMessage);
         setState((prev) => prev ? { ...prev, isLoading: false } : prev);
-        Alert.alert("Error", "Failed to start conversation. Please try again.");
+        Alert.alert(
+          "Conversation Error",
+          `Failed to start conversation:\n\n${errorMessage}\n\nPlease check:\n1. Your API key is set correctly\n2. You have internet connection\n3. Your OpenAI account has credits`,
+          [{ text: "OK" }]
+        );
       }
     };
     
@@ -429,6 +442,30 @@ export default function ChatCreationScreen({ navigation, route }: ChatCreationSc
   };
 
   if (!state) {
+    if (error) {
+      return (
+        <ThemedView style={styles.loadingContainer}>
+          <View style={[styles.errorIcon, { backgroundColor: theme.error + "20" }]}>
+            <Feather name="alert-circle" size={48} color={theme.error} />
+          </View>
+          <ThemedText type="h3" style={{ color: theme.error, textAlign: "center" }}>
+            Connection Error
+          </ThemedText>
+          <ThemedText style={[styles.errorText, { color: theme.textSecondary }]}>
+            {error}
+          </ThemedText>
+          <Pressable
+            onPress={() => navigation.goBack()}
+            style={[styles.backButton, { backgroundColor: theme.primary }]}
+          >
+            <ThemedText style={{ color: "#FFFFFF", fontWeight: "600" }}>
+              Go Back
+            </ThemedText>
+          </Pressable>
+        </ThemedView>
+      );
+    }
+
     return (
       <ThemedView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={theme.primary} />
@@ -519,6 +556,25 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: Spacing.sm,
+  },
+  errorIcon: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Spacing.xl,
+  },
+  errorText: {
+    textAlign: "center",
+    marginTop: Spacing.md,
+    marginHorizontal: Spacing.xl,
+  },
+  backButton: {
+    marginTop: Spacing.xl,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
   },
   messageList: {
     padding: Spacing.md,

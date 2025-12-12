@@ -5,6 +5,7 @@ node_modules/
 
 # Expo
 .expo/
+.local/
 dist/
 web-build/
 expo-env.d.ts
@@ -32,6 +33,21 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+.env.*
+*.env
+*.md
+
+# API keys and secrets
+**/secrets/
+**/credentials/
+**/*.key
+**/*.pem
+**/*.p12
+**/*.jks
+**/*.mobileprovision
+google-services.json
+GoogleService-Info.plist
 
 # typescript
 *.tsbuildinfo
@@ -41,3 +57,6 @@ app-example
 # generated native folders
 /ios
 /android
+
+replit.md
+.claude/

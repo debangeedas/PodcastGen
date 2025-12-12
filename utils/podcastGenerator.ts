@@ -1,9 +1,11 @@
-import * as FileSystem from "expo-file-system";
-import { Podcast, PodcastSeries } from "./storage";
+import * as FileSystem from "expo-file-system/legacy";
+import { Platform } from "react-native";
+import { Podcast, PodcastSeries, getCurrentUserId, Source } from "./storage";
+import { uploadWithTimeout, isCloudinaryConfigured } from "./cloudinaryStorage";
 
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || "";
 
-const TEST_MODE = true;
+const TEST_MODE = false; // Set to true to skip API calls and use dummy data
 
 const TEST_SCRIPT = `Welcome back to Deep Dive, where we explore the fascinating corners of our world... Today, we're diving into something you've probably wondered about at some point.
 
@@ -19,12 +21,15 @@ So what does this mean for you? Well, the next time you encounter this topic, yo
 
 That's all for today's episode. Keep exploring, keep questioning, and I'll see you in the next Deep Dive.`;
 
-const TEST_SOURCES = [
-  "Academic research publications and peer-reviewed journals",
-  "Industry expert interviews and analysis",
-  "Government statistical databases",
-  "Historical archives and documentation",
-  "Scientific research institutions",
+const TEST_SOURCES: Source[] = [
+  {
+    title: "Wikipedia - Example Topic",
+    url: "https://en.wikipedia.org/wiki/Example",
+  },
+  {
+    title: "Encyclopædia Britannica",
+    url: "https://www.britannica.com",
+  },
 ];
 
 const SERIES_COLORS = [
@@ -60,7 +65,7 @@ export interface GenerationOptions {
 
 interface ResearchResult {
   content: string;
-  sources: string[];
+  sources: Source[];
 }
 
 interface EpisodeOutline {
@@ -73,6 +78,74 @@ interface SeriesOutline {
   title: string;
   description: string;
   episodes: EpisodeOutline[];
+}
+
+async function findRealSources(topic: string): Promise<Source[]> {
+  const sources: Source[] = [];
+  
+  try {
+    // Always try to get Wikipedia source first (most reliable)
+    const searchResponse = await fetch(
+      `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(topic)}&limit=1&format=json&origin=*`
+    );
+
+    if (searchResponse.ok) {
+      const searchData = await searchResponse.json();
+      const articleTitle = searchData[1]?.[0];
+      const articleUrl = searchData[3]?.[0];
+
+      if (articleTitle && articleUrl) {
+        sources.push({
+          title: `${articleTitle} - Wikipedia`,
+          url: articleUrl,
+        });
+      }
+    }
+
+    // Try to find additional authoritative sources based on topic
+    const topicLower = topic.toLowerCase();
+    const currentYear = new Date().getFullYear();
+
+    // Add domain-specific sources
+    if (topicLower.includes("space") || topicLower.includes("astro") || topicLower.includes("planet") || topicLower.includes("nasa")) {
+      sources.push({
+        title: `NASA - ${topic}`,
+        url: `https://www.nasa.gov/search/?q=${encodeURIComponent(topic)}`,
+      });
+    }
+    
+    if (topicLower.includes("health") || topicLower.includes("medical") || topicLower.includes("disease") || topicLower.includes("medicine")) {
+      sources.push({
+        title: `National Institutes of Health - ${topic}`,
+        url: `https://www.nih.gov/search?q=${encodeURIComponent(topic)}`,
+      });
+    }
+    
+    if (topicLower.includes("history") || topicLower.includes("war") || topicLower.includes("ancient") || topicLower.includes("historical")) {
+      sources.push({
+        title: `Encyclopædia Britannica - ${topic}`,
+        url: `https://www.britannica.com/search?query=${encodeURIComponent(topic)}`,
+      });
+    }
+
+    // Always ensure at least one source (Wikipedia or fallback)
+    if (sources.length === 0) {
+      // Fallback: Use Wikipedia search page
+      sources.push({
+        title: `Wikipedia - ${topic}`,
+        url: `https://en.wikipedia.org/wiki/Special:Search/${encodeURIComponent(topic)}`,
+      });
+    }
+
+    return sources.slice(0, 5); // Limit to 5 sources
+  } catch (error) {
+    console.error("Error finding real sources:", error);
+    // Always return at least one fallback source
+    return [{
+      title: `Wikipedia - ${topic}`,
+      url: `https://en.wikipedia.org/wiki/Special:Search/${encodeURIComponent(topic)}`,
+    }];
+  }
 }
 
 async function researchTopic(topic: string): Promise<ResearchResult> {
@@ -90,20 +163,57 @@ async function researchTopic(topic: string): Promise<ResearchResult> {
     );
   }
 
-  const researchPrompt = `You are a research assistant tasked with gathering comprehensive, factual information about a topic. Your goal is to provide well-researched, accurate information that could be used to create an educational podcast.
+  // Get real, verifiable sources first
+  console.log("🔍 Finding real sources for:", topic);
+  const realSources = await findRealSources(topic);
+  console.log("✅ Found sources:", realSources.length);
 
-Research the following topic thoroughly: "${topic}"
+  const researchPrompt = `You are researching a topic for an educational podcast. Provide comprehensive, accurate information from your knowledge base that will be used to create an engaging audio script.
 
-Provide:
-1. A comprehensive overview of the topic (2-3 paragraphs)
-2. 5-7 key facts, statistics, or insights that are interesting and educational
-3. Recent developments or trends related to this topic
-4. Common misconceptions to address
-5. Expert perspectives or notable quotes on the subject
+## Topic
+"${topic}"
 
-Format your response as structured research notes. Be factual, cite specific data where relevant, and focus on information that would make for engaging podcast content.
+## Research Requirements
 
-At the end, list 3-5 credible source types that would typically contain this information (e.g., "Academic journals on neuroscience", "CDC health statistics", "NASA research publications").`;
+### 1. Overview (2-3 paragraphs)
+Provide a clear, comprehensive introduction to the topic. Include:
+- What it is and why it matters
+- Historical context or background
+- Current relevance or significance
+
+### 2. Key Facts & Insights (5-7 points)
+Provide specific, interesting facts such as:
+- Statistics with numbers and years
+- Important dates or milestones
+- Surprising discoveries or findings
+- Scale/magnitude (size, reach, impact)
+
+Example (good): "In 1969, the Apollo 11 mission successfully landed Neil Armstrong and Buzz Aldrin on the Moon, with Armstrong's first step occurring at 02:56 UTC on July 21."
+
+Example (bad): "Apollo 11 was an important space mission."
+
+### 3. Recent Developments (if applicable)
+What's happened in the last 5-10 years related to this topic?
+
+### 4. Common Misconceptions
+What do people often get wrong about this topic? Include the reality.
+
+Example:
+- Misconception: "Vikings wore horned helmets"
+- Reality: "No historical evidence supports this; likely originated from 19th-century romanticized artwork"
+
+### 5. Interesting Angles
+What makes this topic fascinating? Include:
+- Surprising connections to other topics
+- Counterintuitive aspects
+- Human stories or personalities involved
+
+## Important Guidelines
+- Be specific with numbers, dates, and names
+- Use concrete examples over generalizations
+- Focus on information that translates well to audio
+- Prioritize accuracy over speculation
+- Make it interesting without sensationalizing`;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -118,12 +228,12 @@ At the end, list 3-5 credible source types that would typically contain this inf
           {
             role: "system",
             content:
-              "You are a knowledgeable research assistant with expertise across many domains. Provide accurate, well-organized information based on verified knowledge. When discussing facts, be specific with numbers, dates, and details where appropriate.",
+              "You are an expert research assistant with deep knowledge across science, history, technology, arts, and culture. You provide accurate, detailed information with specific facts, dates, statistics, and names. You structure information clearly and highlight what makes topics fascinating. You distinguish between established facts and areas of ongoing research or debate.",
           },
           { role: "user", content: researchPrompt },
         ],
-        max_tokens: 1500,
-        temperature: 0.5,
+        max_tokens: 2000,
+        temperature: 0.3,
       }),
     });
 
@@ -137,34 +247,19 @@ At the end, list 3-5 credible source types that would typically contain this inf
     const data = await response.json();
     const researchContent = data.choices[0]?.message?.content || "";
 
-    const sourcePatterns = [
-      /(?:sources?|references?|citations?):\s*([\s\S]*?)(?:\n\n|$)/i,
-      /(?:credible sources?|source types?):\s*([\s\S]*?)(?:\n\n|$)/i,
-    ];
-
-    let extractedSources: string[] = [];
-    for (const pattern of sourcePatterns) {
-      const match = researchContent.match(pattern);
-      if (match) {
-        extractedSources = match[1]
-          .split(/\n|,|;/)
-          .map((s: string) => s.replace(/^[-*\d.)\s]+/, "").trim())
-          .filter((s: string) => s.length > 10 && s.length < 100);
-        break;
-      }
-    }
-
-    if (extractedSources.length === 0) {
-      extractedSources = [
-        `Research databases and academic publications on ${topic}`,
-        `Expert analysis and industry reports`,
-        `Verified scientific and educational resources`,
-      ];
+    // Use real sources if found, otherwise fallback
+    let finalSources = realSources;
+    if (finalSources.length === 0) {
+      // Always provide at least one clickable source
+      finalSources = [{
+        title: `Wikipedia - ${topic}`,
+        url: `https://en.wikipedia.org/wiki/Special:Search/${encodeURIComponent(topic)}`,
+      }];
     }
 
     return {
       content: researchContent,
-      sources: extractedSources.slice(0, 5),
+      sources: finalSources,
     };
   } catch (error) {
     console.error("Error researching topic:", error);
@@ -207,19 +302,94 @@ async function planSeries(topic: string): Promise<SeriesOutline> {
     throw new Error("OpenAI API key is not configured");
   }
 
-  const planPrompt = `You are planning a podcast series about: "${topic}"
+  const planPrompt = `You are creating a podcast series outline for: "${topic}"
 
-Create an outline for 3-5 episodes that comprehensively cover this topic. Each episode should focus on a distinct aspect while building a cohesive narrative across the series.
+## Your Task
+Design a 3-5 episode series that comprehensively explores this topic. The series should tell a cohesive story while each episode stands alone as an engaging listen.
 
-Respond in this exact JSON format:
+## Series Structure Approaches
+
+### Historical Topics
+- Episode 1: Origins and early beginnings
+- Episode 2: Key developments and turning points
+- Episode 3: Golden age or peak period
+- Episode 4: Challenges, controversies, or decline
+- Episode 5: Modern legacy and ongoing impact
+
+### Scientific/Technical Topics
+- Episode 1: Fundamentals and why it matters
+- Episode 2: How it works (mechanisms/processes)
+- Episode 3: Key discoveries and breakthroughs
+- Episode 4: Current applications and real-world impact
+- Episode 5: Future directions and open questions
+
+### Cultural/Social Topics
+- Episode 1: What it is and why it matters today
+- Episode 2: Historical context and evolution
+- Episode 3: Key figures and their contributions
+- Episode 4: Cultural impact and influence
+- Episode 5: Current state and future outlook
+
+## Episode Requirements
+Each episode needs:
+
+**Title (Engaging & Specific)**
+- NOT generic: "Episode 1: Introduction" ❌
+- YES specific: "From Rags to Riches: The Birth of Jazz in New Orleans" ✅
+- Use subtitles, questions, or intriguing phrases
+- Hint at the story or surprise within
+
+**Focus (One Clear Sentence)**
+What angle or aspect does this episode explore?
+Example: "How Louis Armstrong transformed jazz from ensemble music into a vehicle for individual expression"
+
+**Key Points (3 Specific Items)**
+Concrete topics to cover, not vague themes
+- BAD: "Important developments" ❌
+- GOOD: "Armstrong's Hot Five recordings of 1925-1928" ✅
+- GOOD: "Introduction of scat singing and its influence on vocalists" ✅
+- GOOD: "Migration from New Orleans to Chicago and impact on style" ✅
+
+## Good Example
+
+Topic: "The History of Jazz Music"
+
 {
-  "title": "Series title",
-  "description": "Brief series description (1-2 sentences)",
+  "title": "Jazz: America's Original Art Form",
+  "description": "From New Orleans street corners to concert halls worldwide, discover how jazz became one of the most influential musical movements in history.",
   "episodes": [
     {
-      "title": "Episode 1 title",
-      "focus": "Brief description of this episode's focus",
-      "keyPoints": ["Point 1", "Point 2", "Point 3"]
+      "title": "Birth in the Crescent City: Jazz's New Orleans Roots",
+      "focus": "How African American communities in New Orleans blended African rhythms, blues, and ragtime to create jazz",
+      "keyPoints": [
+        "West African rhythmic traditions and the Congo Square gatherings",
+        "Early pioneers: Buddy Bolden, Jelly Roll Morton, and the first jazz bands",
+        "Storyville's role as an incubator for the new sound"
+      ]
+    },
+    {
+      "title": "The Armstrong Revolution: Jazz Becomes an Art",
+      "focus": "How Louis Armstrong transformed jazz from ensemble music into a platform for virtuosic individual expression",
+      "keyPoints": [
+        "The Hot Five and Hot Seven recordings that changed everything",
+        "Scat singing and the voice as an instrument",
+        "The Great Migration and jazz's spread to Chicago"
+      ]
+    }
+  ]
+}
+
+## Response Format
+Respond with ONLY valid JSON in this exact structure. No additional text or explanation.
+
+{
+  "title": "Compelling series title (not just the topic)",
+  "description": "What listeners will discover across the series (1-2 sentences)",
+  "episodes": [
+    {
+      "title": "Specific, engaging episode title",
+      "focus": "Clear one-sentence description of episode's angle",
+      "keyPoints": ["Specific point 1", "Specific point 2", "Specific point 3"]
     }
   ]
 }`;
@@ -236,12 +406,13 @@ Respond in this exact JSON format:
         messages: [
           {
             role: "system",
-            content: "You are an expert podcast producer who creates engaging educational content. Always respond with valid JSON.",
+            content: "You are an expert podcast producer and series architect with experience creating compelling educational content for platforms like NPR, BBC, and Radiolab. You design series that are both informative and captivating. You always respond with valid JSON only.",
           },
           { role: "user", content: planPrompt },
         ],
-        max_tokens: 1000,
-        temperature: 0.7,
+        max_tokens: 1500,
+        temperature: 0.8,
+        response_format: { type: "json_object" },
       }),
     });
 
@@ -250,24 +421,138 @@ Respond in this exact JSON format:
     }
 
     const data = await response.json();
-    const content = data.choices[0]?.message?.content || "";
-    
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("Failed to parse series outline");
+    const content = data.choices[0]?.message?.content || "{}";
+
+    // Parse the JSON response
+    const parsed = JSON.parse(content);
+
+    // Validate structure
+    if (!parsed.title || !parsed.description || !Array.isArray(parsed.episodes)) {
+      throw new Error("Invalid series outline structure from API");
     }
-    
-    return JSON.parse(jsonMatch[0]);
+
+    // Validate episodes
+    for (const ep of parsed.episodes) {
+      if (!ep.title || !ep.focus || !Array.isArray(ep.keyPoints)) {
+        throw new Error("Invalid episode structure in series outline");
+      }
+    }
+
+    return parsed;
   } catch (error) {
     console.error("Error planning series:", error);
     throw error;
   }
 }
 
+async function generatePodcastTitle(
+  topic: string,
+  research: ResearchResult,
+  script?: string
+): Promise<string> {
+  if (TEST_MODE) {
+    // Generate a creative test title
+    const words = topic.split(/\s+/);
+    if (words.length === 1) {
+      return `The Fascinating World of ${topic}`;
+    }
+    return `Exploring ${topic}: A Deep Dive`;
+  }
+
+  if (!OPENAI_API_KEY) {
+    // Fallback to a formatted version of the topic
+    return topic
+      .split(/\s+/)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+
+  const titlePrompt = `You are creating a podcast episode title. Generate a creative, engaging, and precise title that:
+1. Accurately communicates what the content is about
+2. Is intriguing and makes people want to listen
+3. Is between 4-8 words (not too long, not too short)
+4. Uses active, engaging language
+5. Avoids generic phrases like "Everything You Need to Know" or "Complete Guide"
+
+## Topic
+"${topic}"
+
+## Research Summary
+${research.content.substring(0, 500)}${research.content.length > 500 ? '...' : ''}
+
+${script ? `## Script Preview
+${script.substring(0, 300)}...` : ''}
+
+## Examples of Good Titles
+- "The Year Without a Summer: How a Volcano Changed History"
+- "From Zero to Hero: The Rise of Jazz in New Orleans"
+- "Breaking the Sound Barrier: The Race to Supersonic Flight"
+- "The Hidden Language of Bees: Decoding Nature's Communication"
+- "When Time Stood Still: The Mystery of the Missing Summer"
+
+## Examples of Bad Titles (Avoid These)
+- "Everything About ${topic}" ❌
+- "${topic} Explained" ❌
+- "The Complete Guide to ${topic}" ❌
+- "${topic}: A Deep Dive" ❌ (too generic)
+
+Generate ONLY the title. No quotes, no explanation, just the title text.`;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert podcast producer who creates compelling, accurate episode titles. You always respond with just the title text, no quotes or additional explanation.",
+          },
+          { role: "user", content: titlePrompt },
+        ],
+        max_tokens: 50,
+        temperature: 0.8,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Title generation failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const generatedTitle = data.choices[0]?.message?.content?.trim() || "";
+    
+    // Clean up the title (remove quotes if present)
+    const cleanTitle = generatedTitle.replace(/^["']|["']$/g, '').trim();
+    
+    // Fallback if title is too short or empty
+    if (cleanTitle.length < 5) {
+      return topic
+        .split(/\s+/)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    }
+    
+    return cleanTitle;
+  } catch (error) {
+    console.error("Error generating title:", error);
+    // Fallback to formatted topic
+    return topic
+      .split(/\s+/)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+}
+
 async function generatePodcastScript(
   topic: string,
   research: ResearchResult,
-  episodeContext?: { title: string; focus: string; keyPoints: string[]; episodeNumber: number; totalEpisodes: number }
+  episodeContext?: { title: string; focus: string; keyPoints: string[]; episodeNumber: number; totalEpisodes: number },
+  depth: "quick" | "standard" | "deep" = "standard"
 ): Promise<string> {
   if (TEST_MODE) {
     await new Promise((resolve) => setTimeout(resolve, 600));
@@ -287,24 +572,81 @@ async function generatePodcastScript(
 
   const isSeriesEpisode = !!episodeContext;
   
-  const systemPrompt = `You are a charismatic podcast host known for making complex topics accessible and entertaining. You have a warm, conversational style that makes listeners feel like they're chatting with a knowledgeable friend.
+  const systemPrompt = `You are an award-winning podcast host known for making complex topics accessible, engaging, and memorable. Your voice is warm, enthusiastic, and conversational—like explaining something fascinating to a friend over coffee.
 
-Your podcast "${isSeriesEpisode ? topic : "Deep Dive"}" is known for:
-- Breaking down complicated subjects into digestible insights
-- Using relatable analogies and examples
-- Engaging storytelling that keeps listeners hooked
-- Natural speech patterns with thoughtful pauses
+## Your Podcast Style
+**"${isSeriesEpisode ? topic : "Deep Dive"}"** is known for:
+- Opening with an intriguing hook or question that makes people lean in
+- Using vivid analogies and concrete examples (not abstractions)
+- Weaving in specific facts, dates, and numbers naturally
+- Natural speech rhythm with strategic pauses
+- Storytelling that creates "aha!" moments
+- Ending with insights that change how listeners see the world
 
-Create a podcast script that:
-- Opens with a hook that grabs attention
-${isSeriesEpisode ? `- Mentions this is episode ${episodeContext.episodeNumber} of ${episodeContext.totalEpisodes} in the series` : ""}
-- Flows naturally as spoken content (not written text)
-- Is 300-450 words (approximately 2-3 minutes when read aloud)
-- Uses "..." for natural pauses and emphasis
-- Includes specific facts and insights from the research
-- Ends with a memorable takeaway${isSeriesEpisode ? " and teases the next episode" : ""}
+## Script Structure
 
-IMPORTANT: Write ONLY the spoken content. No speaker labels, timestamps, directions, or [brackets]. Just the words the host would say.`;
+### Opening Hook (${depth === "quick" ? "30-50" : depth === "deep" ? "60-80" : "40-60"} words)
+Start with one of these approaches:
+- A surprising fact or statistic
+- A provocative question
+- A brief story or scenario
+- A common misconception to debunk
+
+Example: "You know that feeling when you discover something that completely changes how you see everyday life? Well, buckle up... because what I'm about to share about [topic] is going to blow your mind."
+
+### Main Content (${depth === "quick" 
+  ? "250-300 words"
+  : depth === "deep"
+  ? "1400-1600 words"
+  : "700-900 words"})
+- Lead with the most interesting insight first
+- Use "you know" and "here's the thing" for conversational flow
+- Include 3-5 specific facts with numbers, dates, or names
+- Use analogies to explain complex concepts
+- Vary sentence length—mix short punchy statements with longer explanations
+- Use natural transitions: "But here's where it gets interesting...", "Now, the surprising part is..."
+
+${isSeriesEpisode ? `### Episode Context
+- Briefly mention: "This is episode ${episodeContext.episodeNumber} of ${episodeContext.totalEpisodes} in our series"
+- Reference previous episode if episodeNumber > 1: "Last time we explored [X], now we're diving into [Y]"
+- Tease next episode at end: "Next time, we'll discover [next topic]"
+` : ""}
+
+### Closing (${depth === "quick" ? "40-60" : depth === "deep" ? "100-120" : "60-80"} words)
+- Summarize the key insight in a memorable way
+- Connect to listeners' lives: "So the next time you [X], remember [Y]"
+- End with energy and curiosity${isSeriesEpisode ? "\n- Preview what's coming in the next episode" : ""}
+
+## Voice & Style Guidelines
+✅ DO:
+- Use contractions (I'm, you're, it's, here's, that's)
+- Include natural filler: "you know", "I mean", "right?", "actually"
+- Use ellipsis (...) for thoughtful pauses
+- Speak in second person ("you") to engage listeners
+- Include rhetorical questions
+- Express genuine enthusiasm
+
+❌ DON'T:
+- Use formal academic language
+- Include speaker labels like "HOST:" or [PAUSE]
+- Write stage directions or sound effects
+- Use jargon without explanation
+- Be overly dramatic or salesy
+
+## Length & Pacing
+${depth === "quick" 
+  ? "- Total: 350-400 words (2-3 minutes spoken at ~150 words/minute)\n- Focus on key highlights and essential information"
+  : depth === "deep"
+  ? "- Total: 1600-1800 words (10-12 minutes spoken at ~150 words/minute)\n- Comprehensive exploration with multiple examples, case studies, and detailed explanations"
+  : "- Total: 800-1000 words (5-7 minutes spoken at ~150 words/minute)\n- Balanced coverage with good detail and examples"}
+- Average sentence: 15-20 words
+- Mix short punchy sentences with longer flowing ones
+- Strategic pauses (...) every 2-3 sentences
+
+## Example Opening (Reference Quality)
+"Here's something wild... Did you know that in 1816, there was literally no summer? Like, at all. Snow in July. Crops failing across the Northern Hemisphere. People called it 'The Year Without a Summer,' and the culprit? A massive volcanic eruption halfway around the world in Indonesia. Mount Tambora had just unleashed the most powerful eruption in recorded history, and its effects rippled across the entire planet. But here's the fascinating part... this disaster actually led to one of the greatest works of literature ever written. Let me explain..."
+
+CRITICAL: Write ONLY the exact words the host speaks. No labels, no directions, no brackets—just pure spoken content.`;
 
   const episodePrompt = isSeriesEpisode 
     ? `
@@ -317,12 +659,27 @@ ${episodeContext.keyPoints.map((p, i) => `${i + 1}. ${p}`).join("\n")}
 ` 
     : "";
 
-  const userPrompt = `Create an engaging podcast episode about: "${isSeriesEpisode ? episodeContext.title : topic}"
+  const userPrompt = `Create an engaging podcast script about: "${isSeriesEpisode ? episodeContext.title : topic}"
 ${episodePrompt}
-Use this research to inform your content:
+
+## Research Material
 ${research.content}
 
-Transform this research into a captivating podcast episode. Make it sound natural and conversational, as if you're explaining this to a curious friend over coffee.`;
+## Your Task
+Transform this research into a captivating podcast script${depth === "quick" 
+  ? " (350-400 words, 2-3 minutes)"
+  : depth === "deep"
+  ? " (1600-1800 words, 10-12 minutes)"
+  : " (800-1000 words, 5-7 minutes)"}.
+
+Remember:
+- Start with a hook that grabs attention in the first 10 seconds
+- Include 3-5 specific facts from the research (use actual numbers, dates, names)
+- Use vivid analogies and examples to make abstract concepts concrete
+- Speak naturally with contractions and conversational phrases
+- End with an insight that sticks with the listener
+
+Think: "What would make ME excited to learn about this?" Then write that script.`;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -337,8 +694,8 @@ Transform this research into a captivating podcast episode. Make it sound natura
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        max_tokens: 1000,
-        temperature: 0.75,
+        max_tokens: 1200,
+        temperature: 0.85,
       }),
     });
 
@@ -407,33 +764,57 @@ async function generateAudio(
     }
 
     const audioBlob = await response.blob();
-    const reader = new FileReader();
-
-    const base64Audio = await new Promise<string>((resolve, reject) => {
-      reader.onloadend = () => {
-        const base64 = reader.result as string;
-        const base64Data = base64.split(",")[1];
-        resolve(base64Data);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(audioBlob);
-    });
-
-    const audioDir = `${FileSystem.documentDirectory}podcasts/`;
-    const dirInfo = await FileSystem.getInfoAsync(audioDir);
-    if (!dirInfo.exists) {
-      await FileSystem.makeDirectoryAsync(audioDir, { intermediates: true });
-    }
-
-    const audioUri = `${audioDir}${podcastId}.mp3`;
-    await FileSystem.writeAsStringAsync(audioUri, base64Audio, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-
     const wordCount = script.split(/\s+/).length;
     const estimatedDuration = Math.round((wordCount / 150) * 60);
 
-    return { uri: audioUri, duration: estimatedDuration };
+    const userId = getCurrentUserId();
+    if (!userId) {
+      throw new Error('User must be authenticated to generate podcasts');
+    }
+
+    // Try Cloudinary upload first (works for all users, 25GB free)
+    if (isCloudinaryConfigured) {
+      try {
+        const cloudinaryUrl = await uploadWithTimeout(audioBlob, podcastId, userId);
+        return { uri: cloudinaryUrl, duration: estimatedDuration };
+      } catch (error) {
+        console.error("⚠️ Cloudinary upload failed:", error);
+        // Fall through to local storage
+      }
+    }
+
+    // Fallback: Local storage
+    if (Platform.OS === 'web') {
+      // On web, use blob URL (temporary - expires on page reload)
+      const audioBlobUrl = URL.createObjectURL(audioBlob);
+      return { uri: audioBlobUrl, duration: estimatedDuration };
+    } else {
+      // On native, save to file system
+      const reader = new FileReader();
+
+      const base64Audio = await new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => {
+          const base64 = reader.result as string;
+          const base64Data = base64.split(",")[1];
+          resolve(base64Data);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(audioBlob);
+      });
+
+      const audioDir = `${FileSystem.documentDirectory}podcasts/`;
+      const dirInfo = await FileSystem.getInfoAsync(audioDir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(audioDir, { intermediates: true });
+      }
+
+      const audioUri = `${audioDir}${podcastId}.mp3`;
+      await FileSystem.writeAsStringAsync(audioUri, base64Audio, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      return { uri: audioUri, duration: estimatedDuration };
+    }
   } catch (error) {
     console.error("Error generating audio:", error);
     throw error;
@@ -471,7 +852,15 @@ export async function generatePodcast(
       progress: 0.45,
     });
 
-    const script = await generatePodcastScript(topic, research);
+    const script = await generatePodcastScript(topic, research, undefined, depth || "standard");
+
+    onProgress({
+      stage: "generating",
+      message: "Creating episode title...",
+      progress: 0.5,
+    });
+
+    const episodeTitle = await generatePodcastTitle(topic, research, script);
 
     onProgress({
       stage: "creating_audio",
@@ -489,7 +878,7 @@ export async function generatePodcast(
 
     const podcast: Podcast = {
       id: podcastId,
-      topic,
+      topic: episodeTitle, // Use the generated creative title instead of raw topic
       script,
       audioUri: uri,
       duration,
@@ -581,7 +970,22 @@ export async function generatePodcastSeries(
         ...episodeOutline,
         episodeNumber,
         totalEpisodes,
+      }, depth || "standard");
+
+      onProgress({
+        stage: "generating",
+        message: `Episode ${episodeNumber}: Creating title...`,
+        progress: baseProgress + episodeProgressRange * 0.5,
+        episodeNumber,
+        totalEpisodes,
       });
+
+      // Generate a creative title for this episode based on its focus and script
+      const episodeTitle = await generatePodcastTitle(
+        `${topic} - ${episodeOutline.focus}`,
+        research,
+        script
+      );
 
       onProgress({
         stage: "creating_audio",
@@ -598,7 +1002,7 @@ export async function generatePodcastSeries(
       const episode: Podcast = {
         id: podcastId,
         topic: seriesOutline.title,
-        episodeTitle: episodeOutline.title,
+        episodeTitle: episodeTitle, // Use the generated creative title
         script,
         audioUri: uri,
         duration,

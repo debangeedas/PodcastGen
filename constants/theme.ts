@@ -15,10 +15,11 @@ export const Colors = {
     secondary: secondaryColor,
     success: "#51CF66",
     error: "#FF6B6B",
-    backgroundRoot: "#F8F9FA",
-    backgroundDefault: "#FFFFFF",
-    backgroundSecondary: "#F0F0F0",
-    backgroundTertiary: "#E6E6E6",
+    // Softer, more aesthetic backgrounds with subtle warmth
+    backgroundRoot: "#F5F3FF",      // Very light purple tint
+    backgroundDefault: "#FAFAFA",    // Soft off-white
+    backgroundSecondary: "#F0EDFF",  // Light purple accent
+    backgroundTertiary: "#E8E4FF",   // Slightly deeper purple tint
   },
   dark: {
     text: "#F5F5F5",
@@ -31,10 +32,11 @@ export const Colors = {
     secondary: secondaryColor,
     success: "#51CF66",
     error: "#FF6B6B",
-    backgroundRoot: "#1A1A2E",
-    backgroundDefault: "#25253C",
-    backgroundSecondary: "#2F2F4A",
-    backgroundTertiary: "#3A3A58",
+    // Richer, deeper dark mode with purple undertones
+    backgroundRoot: "#0F0B1F",       // Deep purple-black
+    backgroundDefault: "#1A1625",    // Rich dark purple
+    backgroundSecondary: "#252038",  // Medium dark purple
+    backgroundTertiary: "#2F2948",   // Lighter dark purple
   },
 };
 

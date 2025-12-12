@@ -16,15 +16,13 @@ export default function PlayStackNavigator() {
   return (
     <Stack.Navigator
       screenOptions={{
-        ...getCommonScreenOptions({ theme, isDark }),
+        ...getCommonScreenOptions({ theme, isDark, showTopBar: true }),
       }}
     >
       <Stack.Screen
         name="Play"
         component={PlayScreen}
-        options={{
-          headerTitle: "Now Playing",
-        }}
+        options={{}}
       />
     </Stack.Navigator>
   );

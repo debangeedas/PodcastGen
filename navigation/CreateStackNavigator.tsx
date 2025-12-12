@@ -5,7 +5,6 @@ import ChatCreationScreen from "@/screens/ChatCreationScreen";
 import GeneratingScreen from "@/screens/GeneratingScreen";
 import PlayerScreen from "@/screens/PlayerScreen";
 import SeriesDetailScreen from "@/screens/SeriesDetailScreen";
-import { HeaderTitle } from "@/components/HeaderTitle";
 import { useTheme } from "@/hooks/useTheme";
 import { getCommonScreenOptions } from "@/navigation/screenOptions";
 import { GenerationParams } from "@/utils/conversationFlow";
@@ -26,21 +25,18 @@ export default function CreateStackNavigator() {
   return (
     <Stack.Navigator
       screenOptions={{
-        ...getCommonScreenOptions({ theme, isDark }),
+        ...getCommonScreenOptions({ theme, isDark, showTopBar: true }),
       }}
     >
       <Stack.Screen
         name="Create"
         component={CreateScreen}
-        options={{
-          headerTitle: () => <HeaderTitle title="PodcastGen" />,
-        }}
+        options={{}}
       />
       <Stack.Screen
         name="ChatCreation"
         component={ChatCreationScreen}
         options={{
-          headerTitle: "Create Podcast",
           headerBackTitle: "Back",
         }}
       />
@@ -48,25 +44,23 @@ export default function CreateStackNavigator() {
         name="Generating"
         component={GeneratingScreen}
         options={{
-          headerTitle: "",
           presentation: "modal",
           gestureEnabled: false,
+          ...getCommonScreenOptions({ theme, isDark, showTopBar: false }),
         }}
       />
       <Stack.Screen
         name="Player"
         component={PlayerScreen}
         options={{
-          headerTitle: "",
           presentation: "modal",
+          ...getCommonScreenOptions({ theme, isDark, showTopBar: false }),
         }}
       />
       <Stack.Screen
         name="SeriesDetail"
         component={SeriesDetailScreen}
-        options={{
-          headerTitle: "Series",
-        }}
+        options={{}}
       />
     </Stack.Navigator>
   );

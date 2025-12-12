@@ -15,13 +15,13 @@ export default function ProfileStackNavigator() {
   const { theme, isDark } = useTheme();
 
   return (
-    <Stack.Navigator screenOptions={getCommonScreenOptions({ theme, isDark })}>
+    <Stack.Navigator
+      screenOptions={getCommonScreenOptions({ theme, isDark, showTopBar: true })}
+    >
       <Stack.Screen
         name="Profile"
         component={ProfileScreen}
-        options={{
-          title: "Profile",
-        }}
+        options={{}}
       />
     </Stack.Navigator>
   );

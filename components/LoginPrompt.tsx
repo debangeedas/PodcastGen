@@ -16,7 +16,7 @@ import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/AuthContext.firebase";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
 interface LoginPromptProps {
@@ -34,7 +34,6 @@ export default function LoginPrompt({ visible, onClose, onSuccess }: LoginPrompt
     signInWithGoogle,
     signInWithEmail,
     signUpWithEmail,
-    continueAsGuest,
     isAppleAuthAvailable,
     isGoogleAuthAvailable,
   } = useAuth();
@@ -67,13 +66,16 @@ export default function LoginPrompt({ visible, onClose, onSuccess }: LoginPrompt
     setErrorMessage(null);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
-    const success = await signInWithApple();
+    const result = await signInWithApple();
     setIsLoading(false);
     
-    if (success) {
+    if (result.success) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onClose();
       onSuccess();
+    } else {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setErrorMessage(result.error || "Sign in failed.");
     }
   };
 
@@ -82,13 +84,16 @@ export default function LoginPrompt({ visible, onClose, onSuccess }: LoginPrompt
     setErrorMessage(null);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
-    const success = await signInWithGoogle();
+    const result = await signInWithGoogle();
     setIsLoading(false);
     
-    if (success) {
+    if (result.success) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onClose();
       onSuccess();
+    } else {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setErrorMessage(result.error || "Sign in failed.");
     }
   };
 
@@ -142,18 +147,6 @@ export default function LoginPrompt({ visible, onClose, onSuccess }: LoginPrompt
     }
   };
 
-  const handleGuestContinue = async () => {
-    setIsLoading(true);
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
-    const success = await continueAsGuest();
-    setIsLoading(false);
-    
-    if (success) {
-      onClose();
-      onSuccess();
-    }
-  };
 
   const renderAuthOptions = () => (
     <>
@@ -225,29 +218,6 @@ export default function LoginPrompt({ visible, onClose, onSuccess }: LoginPrompt
           <Feather name="mail" size={20} color={theme.text} style={styles.buttonIcon} />
           <ThemedText type="body" style={{ fontWeight: "600", flex: 1, textAlign: "center" }}>
             Continue with Email
-          </ThemedText>
-        </Pressable>
-
-        <View style={styles.dividerContainer}>
-          <View style={[styles.divider, { backgroundColor: theme.backgroundTertiary }]} />
-          <ThemedText type="small" style={{ color: theme.textSecondary, marginHorizontal: Spacing.md }}>
-            or
-          </ThemedText>
-          <View style={[styles.divider, { backgroundColor: theme.backgroundTertiary }]} />
-        </View>
-
-        <Pressable
-          onPress={handleGuestContinue}
-          style={({ pressed }) => [
-            styles.guestButton,
-            {
-              borderColor: theme.backgroundTertiary,
-              opacity: pressed ? 0.7 : 1,
-            },
-          ]}
-        >
-          <ThemedText type="body" style={{ color: theme.textSecondary }}>
-            Continue as Guest
           </ThemedText>
         </Pressable>
       </View>
@@ -529,23 +499,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
-  },
-  dividerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: Spacing.sm,
-  },
-  divider: {
-    flex: 1,
-    height: 1,
-  },
-  guestButton: {
-    width: "100%",
-    height: 44,
-    borderRadius: BorderRadius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
   },
   formContainer: {
     width: "100%",

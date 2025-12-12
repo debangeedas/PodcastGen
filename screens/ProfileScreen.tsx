@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { StyleSheet, View, TextInput, Pressable, Alert, Switch, Platform } from "react-native";
+import { StyleSheet, View, TextInput, Pressable, Alert, Switch, Platform, ActivityIndicator } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
@@ -9,7 +9,7 @@ import Constants from "expo-constants";
 import { ScreenKeyboardAwareScrollView } from "@/components/ScreenKeyboardAwareScrollView";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import { useAuth, AuthMethod } from "@/contexts/AuthContext";
+import { useAuth, AuthMethod } from "@/contexts/AuthContext.firebase";
 import { Spacing, BorderRadius, Typography, Colors } from "@/constants/theme";
 import Spacer from "@/components/Spacer";
 import {
@@ -20,12 +20,8 @@ import {
   clearAllData,
 } from "@/utils/storage";
 import LoginPrompt from "@/components/LoginPrompt";
-
-const AVATARS = [
-  { icon: "mic" as const, label: "Microphone" },
-  { icon: "headphones" as const, label: "Headphones" },
-  { icon: "activity" as const, label: "Soundwave" },
-];
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { playVoicePreview, stopVoicePreview } from "@/utils/voicePreview";
 
 const QUALITY_OPTIONS = [
   { value: "standard" as const, label: "Standard" },
@@ -42,6 +38,18 @@ const VOICE_OPTIONS = [
   { value: "shimmer" as const, label: "Shimmer (Clear)" },
 ];
 
+const DEPTH_OPTIONS = [
+  { value: "quick" as const, label: "Quick (2-3 min)", description: "Brief overview" },
+  { value: "standard" as const, label: "Standard (5-7 min)", description: "Balanced coverage" },
+  { value: "deep" as const, label: "Deep Dive (10-12 min)", description: "Comprehensive exploration" },
+];
+
+const TONE_OPTIONS = [
+  { value: "conversational" as const, label: "Conversational", description: "Casual and friendly" },
+  { value: "educational" as const, label: "Educational", description: "Structured and informative" },
+  { value: "storytelling" as const, label: "Storytelling", description: "Narrative-driven" },
+];
+
 const getAuthMethodLabel = (method: AuthMethod | undefined): string => {
   switch (method) {
     case "apple":
@@ -50,8 +58,6 @@ const getAuthMethodLabel = (method: AuthMethod | undefined): string => {
       return "Signed in with Google";
     case "email":
       return "Signed in with Email";
-    case "guest":
-      return "Guest Account";
     default:
       return "Signed in";
   }
@@ -70,8 +76,11 @@ export default function ProfileScreen() {
   const { theme, isDark } = useTheme();
   const { user, isAuthenticated, signInWithApple, signOut, isAppleAuthAvailable } = useAuth();
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [showSignOutDialog, setShowSignOutDialog] = useState(false);
+  const [showClearDataDialog, setShowClearDataDialog] = useState(false);
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
   const [hasChanges, setHasChanges] = useState(false);
+  const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
 
   const loadSettings = useCallback(async () => {
     const data = await getSettings();
@@ -80,28 +89,34 @@ export default function ProfileScreen() {
 
   const handleSignIn = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const success = await signInWithApple();
-    if (success) {
+    const result = await signInWithApple();
+    if (result.success) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Sign In Failed", result.error || "Failed to sign in. Please try again.");
     }
   };
 
-  const handleSignOut = () => {
-    Alert.alert(
-      "Sign Out",
-      "Are you sure you want to sign out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Sign Out",
-          style: "destructive",
-          onPress: async () => {
-            await signOut();
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          },
-        },
-      ]
-    );
+  const handleSignOut = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowSignOutDialog(true);
+  };
+
+  const confirmSignOut = async () => {
+    try {
+      setShowSignOutDialog(false);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await signOut();
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        "Error",
+        "Failed to sign out. Please try again.",
+        [{ text: "OK" }]
+      );
+    }
   };
 
   useFocusEffect(
@@ -121,33 +136,63 @@ export default function ProfileScreen() {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  const handleAvatarSelect = async (index: number) => {
-    await updateSetting("avatarIndex", index);
+  const handlePreviewVoice = async (voiceName: string) => {
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      // If already previewing this voice, stop it
+      if (previewingVoice === voiceName) {
+        await stopVoicePreview();
+        setPreviewingVoice(null);
+        return;
+      }
+
+      // Stop any other preview and start this one
+      setPreviewingVoice(voiceName);
+      await playVoicePreview(voiceName);
+
+      // Reset state after preview (it auto-stops when done)
+      setTimeout(() => {
+        setPreviewingVoice(null);
+      }, 10000); // Previews are ~8-10 seconds
+    } catch (error) {
+      console.error("Voice preview error:", error);
+      setPreviewingVoice(null);
+      Alert.alert(
+        "Preview Failed",
+        "Unable to play voice preview. Please check your internet connection.",
+        [{ text: "OK" }]
+      );
+    }
   };
 
-  const handleClearData = () => {
-    Alert.alert(
-      "Clear All Data",
-      "This will delete all your podcasts and settings. This action cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear Data",
-          style: "destructive",
-          onPress: async () => {
-            await clearAllData();
-            setSettings(defaultSettings);
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            Alert.alert("Done", "All data has been cleared.");
-          },
-        },
-      ]
-    );
+  const handleClearData = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowClearDataDialog(true);
+  };
+
+  const confirmClearData = async () => {
+    try {
+      setShowClearDataDialog(false);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      await clearAllData();
+      setSettings(defaultSettings);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Done", "All data has been cleared.");
+    } catch (error) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        "Error",
+        "Failed to clear data. Please try again.",
+        [{ text: "OK" }]
+      );
+    }
   };
 
   return (
+    <>
     <ScreenKeyboardAwareScrollView>
-      <Spacer height={Spacing.lg} />
+      <Spacer height={Spacing.sm} />
 
       <ThemedText type="h4" style={styles.sectionTitle}>
         Account
@@ -157,8 +202,8 @@ export default function ProfileScreen() {
       {isAuthenticated && user ? (
         <View style={[styles.settingCard, { backgroundColor: theme.backgroundDefault }]}>
           <View style={styles.userInfo}>
-            <View style={[styles.userAvatar, { backgroundColor: user.authMethod === "guest" ? theme.backgroundSecondary : theme.primary }]}>
-              <Feather name={getAuthMethodIcon(user.authMethod)} size={24} color={user.authMethod === "guest" ? theme.textSecondary : "#FFFFFF"} />
+            <View style={[styles.userAvatar, { backgroundColor: theme.primary }]}>
+              <Feather name={getAuthMethodIcon(user.authMethod)} size={24} color="#FFFFFF" />
             </View>
             <View style={styles.userDetails}>
               <ThemedText type="body" style={{ fontWeight: "600" }}>
@@ -229,62 +274,104 @@ export default function ProfileScreen() {
       <Spacer height={Spacing["3xl"]} />
 
       <ThemedText type="h4" style={styles.sectionTitle}>
-        Profile
+        Content Preferences
       </ThemedText>
-      <Spacer height={Spacing.md} />
+      <ThemedText type="caption" style={{ color: theme.textSecondary, marginBottom: Spacing.md }}>
+        Set your default preferences for podcast creation
+      </ThemedText>
 
-      <View style={styles.avatarSection}>
-        <View style={styles.avatarsRow}>
-          {AVATARS.map((avatar, index) => (
+      <View style={[styles.settingCard, { backgroundColor: theme.backgroundDefault }]}>
+        <ThemedText type="body" style={{ marginBottom: Spacing.md, fontWeight: "600" }}>
+          Episode Length
+        </ThemedText>
+        <View style={styles.optionsColumn}>
+          {DEPTH_OPTIONS.map((option) => (
             <Pressable
-              key={avatar.icon}
-              onPress={() => handleAvatarSelect(index)}
+              key={option.value}
+              onPress={() => updateSetting("preferredDepth", option.value)}
               style={({ pressed }) => [
-                styles.avatarButton,
+                styles.optionRow,
                 {
                   backgroundColor:
-                    settings.avatarIndex === index
+                    settings.preferredDepth === option.value
+                      ? theme.primary + "15"
+                      : "transparent",
+                  borderWidth: 1,
+                  borderColor:
+                    settings.preferredDepth === option.value
                       ? theme.primary
-                      : theme.backgroundDefault,
-                  opacity: pressed ? 0.8 : 1,
-                  transform: [{ scale: pressed ? 0.95 : 1 }],
+                      : theme.backgroundSecondary,
+                  opacity: pressed ? 0.7 : 1,
                 },
               ]}
             >
-              <Feather
-                name={avatar.icon}
-                size={32}
-                color={settings.avatarIndex === index ? "#FFFFFF" : theme.text}
-              />
+              <View style={styles.optionContent}>
+                <ThemedText
+                  type="body"
+                  style={{
+                    fontWeight: settings.preferredDepth === option.value ? "600" : "400",
+                  }}
+                >
+                  {option.label}
+                </ThemedText>
+                <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                  {option.description}
+                </ThemedText>
+              </View>
+              {settings.preferredDepth === option.value && (
+                <Feather name="check-circle" size={20} color={theme.primary} />
+              )}
             </Pressable>
           ))}
         </View>
-        <ThemedText type="caption" style={{ textAlign: "center", marginTop: Spacing.sm }}>
-          Choose your avatar
-        </ThemedText>
       </View>
 
-      <Spacer height={Spacing["3xl"]} />
+      <Spacer height={Spacing.md} />
 
-      <View style={styles.inputSection}>
-        <ThemedText type="small" style={styles.label}>
-          Display Name
+      <View style={[styles.settingCard, { backgroundColor: theme.backgroundDefault }]}>
+        <ThemedText type="body" style={{ marginBottom: Spacing.md, fontWeight: "600" }}>
+          Tone & Style
         </ThemedText>
-        <TextInput
-          style={[
-            styles.input,
-            {
-              backgroundColor: theme.backgroundDefault,
-              color: theme.text,
-            },
-          ]}
-          value={settings.displayName}
-          onChangeText={(value) => updateSetting("displayName", value)}
-          placeholder="Enter your name"
-          placeholderTextColor={theme.textSecondary}
-          autoCapitalize="words"
-          returnKeyType="done"
-        />
+        <View style={styles.optionsColumn}>
+          {TONE_OPTIONS.map((option) => (
+            <Pressable
+              key={option.value}
+              onPress={() => updateSetting("preferredTone", option.value)}
+              style={({ pressed }) => [
+                styles.optionRow,
+                {
+                  backgroundColor:
+                    settings.preferredTone === option.value
+                      ? theme.primary + "15"
+                      : "transparent",
+                  borderWidth: 1,
+                  borderColor:
+                    settings.preferredTone === option.value
+                      ? theme.primary
+                      : theme.backgroundSecondary,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <View style={styles.optionContent}>
+                <ThemedText
+                  type="body"
+                  style={{
+                    fontWeight: settings.preferredTone === option.value ? "600" : "400",
+                  }}
+                >
+                  {option.label}
+                </ThemedText>
+                <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                  {option.description}
+                </ThemedText>
+              </View>
+              {settings.preferredTone === option.value && (
+                <Feather name="check-circle" size={20} color={theme.primary} />
+              )}
+            </Pressable>
+          ))}
+        </View>
       </View>
 
       <Spacer height={Spacing["3xl"]} />
@@ -295,38 +382,71 @@ export default function ProfileScreen() {
       <Spacer height={Spacing.md} />
 
       <View style={[styles.settingCard, { backgroundColor: theme.backgroundDefault }]}>
-        <ThemedText type="body" style={{ marginBottom: Spacing.md }}>
+        <ThemedText type="body" style={{ marginBottom: Spacing.xs }}>
           Narrator Voice
         </ThemedText>
-        <View style={styles.voiceOptions}>
+        <ThemedText type="caption" style={{ color: theme.textSecondary, marginBottom: Spacing.md }}>
+          Tap to select, press play to preview
+        </ThemedText>
+        <View style={styles.voiceList}>
           {VOICE_OPTIONS.map((option) => (
-            <Pressable
+            <View
               key={option.value}
-              onPress={() => updateSetting("preferredVoice", option.value)}
               style={[
-                styles.voiceOption,
+                styles.voiceRow,
                 {
                   backgroundColor:
                     settings.preferredVoice === option.value
+                      ? theme.primary + "15"
+                      : "transparent",
+                  borderWidth: 1,
+                  borderColor:
+                    settings.preferredVoice === option.value
                       ? theme.primary
                       : theme.backgroundSecondary,
-                  borderWidth: settings.preferredVoice === option.value ? 0 : 1,
-                  borderColor: theme.primary,
                 },
               ]}
             >
-              <ThemedText
-                type="small"
-                style={{
-                  color:
-                    settings.preferredVoice === option.value ? "#FFFFFF" : theme.text,
-                  fontWeight: settings.preferredVoice === option.value ? "600" : "400",
-                }}
-                numberOfLines={1}
+              <Pressable
+                onPress={() => updateSetting("preferredVoice", option.value)}
+                style={styles.voiceContent}
               >
-                {option.label}
-              </ThemedText>
-            </Pressable>
+                <View style={styles.voiceTextContainer}>
+                  <ThemedText
+                    type="body"
+                    style={{
+                      fontWeight: settings.preferredVoice === option.value ? "600" : "400",
+                    }}
+                  >
+                    {option.label}
+                  </ThemedText>
+                </View>
+                {settings.preferredVoice === option.value && (
+                  <Feather name="check-circle" size={20} color={theme.primary} />
+                )}
+              </Pressable>
+              <Pressable
+                onPress={() => handlePreviewVoice(option.value)}
+                disabled={previewingVoice !== null && previewingVoice !== option.value}
+                style={({ pressed }) => [
+                  styles.previewButton,
+                  {
+                    backgroundColor: theme.primary + (pressed ? "30" : "20"),
+                    opacity: previewingVoice !== null && previewingVoice !== option.value ? 0.5 : 1,
+                  },
+                ]}
+              >
+                {previewingVoice === option.value ? (
+                  <ActivityIndicator size="small" color={theme.primary} />
+                ) : (
+                  <Feather
+                    name={previewingVoice === option.value ? "pause" : "volume-2"}
+                    size={18}
+                    color={theme.primary}
+                  />
+                )}
+              </Pressable>
+            </View>
           ))}
         </View>
       </View>
@@ -430,38 +550,34 @@ export default function ProfileScreen() {
 
       <Spacer height={Spacing["4xl"]} />
     </ScreenKeyboardAwareScrollView>
+
+    <ConfirmDialog
+      visible={showSignOutDialog}
+      title="Sign Out"
+      message="Are you sure you want to sign out? You'll need to sign in again to access your podcasts."
+      confirmText="Sign Out"
+      cancelText="Cancel"
+      destructive
+      onConfirm={confirmSignOut}
+      onCancel={() => setShowSignOutDialog(false)}
+    />
+
+    <ConfirmDialog
+      visible={showClearDataDialog}
+      title="⚠️ Clear All Data"
+      message="WARNING: This will permanently delete ALL your podcasts, series, and settings. This action CANNOT be undone. Are you absolutely sure you want to continue?"
+      confirmText="Yes, Clear Everything"
+      cancelText="Cancel"
+      destructive
+      warning
+      onConfirm={confirmClearData}
+      onCancel={() => setShowClearDataDialog(false)}
+    />
+  </>
   );
 }
 
 const styles = StyleSheet.create({
-  avatarSection: {
-    alignItems: "center",
-  },
-  avatarsRow: {
-    flexDirection: "row",
-    gap: Spacing.xl,
-  },
-  avatarButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  inputSection: {
-    width: "100%",
-  },
-  label: {
-    marginBottom: Spacing.sm,
-    fontWeight: "600",
-    opacity: 0.8,
-  },
-  input: {
-    height: Spacing.inputHeight,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.lg,
-    fontSize: Typography.body.fontSize,
-  },
   sectionTitle: {
     marginBottom: Spacing.xs,
   },
@@ -500,17 +616,37 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     borderRadius: BorderRadius.md,
   },
-  voiceOptions: {
+  voiceList: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Spacing.sm,
   },
-  voiceOption: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    minWidth: "30%",
+  voiceRow: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    flex: 1,
+    minWidth: "30%",
+    maxWidth: "48%",
+  },
+  voiceContent: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginRight: Spacing.md,
+  },
+  voiceTextContainer: {
+    flex: 1,
+  },
+  previewButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
   },
   userInfo: {
     flexDirection: "row",
@@ -557,5 +693,19 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     alignItems: "center",
     justifyContent: "center",
+  },
+  optionsColumn: {
+    gap: Spacing.sm,
+  },
+  optionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.sm,
+  },
+  optionContent: {
+    flex: 1,
+    gap: Spacing.xs,
   },
 });

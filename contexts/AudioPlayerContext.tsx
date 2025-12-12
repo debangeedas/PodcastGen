@@ -61,7 +61,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   const playPodcast = useCallback(async (podcastId: string) => {
     setIsLoading(true);
-    
+
     try {
       if (currentPodcast?.id === podcastId && soundRef.current) {
         await soundRef.current.playAsync();
@@ -72,10 +72,16 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       await unloadCurrentAudio();
 
       const podcast = await getPodcastById(podcastId);
-      if (!podcast || !podcast.audioUri) {
-        setIsLoading(false);
-        return;
+
+      if (!podcast) {
+        throw new Error("Podcast not found");
       }
+
+      if (!podcast.audioUri) {
+        throw new Error("This podcast doesn't have an audio file. Please regenerate it.");
+      }
+
+      console.log("🎵 Loading audio from:", podcast.audioUri.substring(0, 50) + "...");
 
       setCurrentPodcast(podcast);
       setDuration(podcast.duration);
@@ -92,8 +98,12 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         onPlaybackStatusUpdate
       );
       soundRef.current = sound;
+      console.log("✅ Audio loaded and playing");
+
     } catch (error) {
-      console.error("Error playing podcast:", error);
+      console.error("❌ Error playing podcast:", error);
+      setIsLoading(false);
+      throw error; // Re-throw so LibraryScreen can catch it
     } finally {
       setIsLoading(false);
     }

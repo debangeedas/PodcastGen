@@ -49,7 +49,7 @@ PodcastGen is a mobile app that creates podcasts from search queries. Users ente
 ```
 
 ## Key Features
-1. **Authentication**: Apple Sign-In on iOS, guest mode on other platforms
+1. **Authentication**: Apple Sign-In (iOS), Google Sign-In, and Email/Password (all platforms)
 2. **Conversational AI Interface**: Chat-based creation with follow-up questions to refine topic scope, depth, and style
 3. **Single Episode Mode**: Create a focused episode on a specific topic
 4. **Series Mode**: Generate multi-episode series (3-5 episodes) for broader topics
@@ -93,10 +93,10 @@ npm run dev
 ## Recent Changes
 - Enhanced authentication with multiple sign-in options:
   - Apple Sign-In (iOS only)
+  - Google Sign-In (all platforms)
   - Email/Password sign-up and sign-in (all platforms)
-  - Guest mode (all platforms)
 - Login prompt redesigned with sign-in/sign-up toggle for email auth
-- Profile screen shows auth method used (Apple, Email, Guest)
+- Profile screen shows auth method used (Apple, Google, Email)
 - AuthContext manages global auth state with AsyncStorage persistence
 - Email accounts stored locally with basic validation
 - Added "Play" tab with persistent mini player bar across all screens (like Spotify)

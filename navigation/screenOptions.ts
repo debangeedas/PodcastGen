@@ -1,6 +1,8 @@
+import React from "react";
 import { Platform } from "react-native";
 import { NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
+import TopBar from "@/components/TopBar";
 
 interface ScreenOptionsParams {
   theme: {
@@ -9,12 +11,14 @@ interface ScreenOptionsParams {
   };
   isDark: boolean;
   transparent?: boolean;
+  showTopBar?: boolean;
 }
 
 export const getCommonScreenOptions = ({
   theme,
   isDark,
-  transparent = true,
+  transparent = false,
+  showTopBar = true,
 }: ScreenOptionsParams): NativeStackNavigationOptions => ({
   headerTitleAlign: "center",
   headerTransparent: transparent,
@@ -22,11 +26,12 @@ export const getCommonScreenOptions = ({
   headerTintColor: theme.text,
   headerStyle: {
     backgroundColor: Platform.select({
-      ios: undefined,
+      ios: theme.backgroundRoot,
       android: theme.backgroundRoot,
       web: theme.backgroundRoot,
     }),
   },
+  header: showTopBar ? () => React.createElement(TopBar) : undefined,
   gestureEnabled: true,
   gestureDirection: "horizontal",
   fullScreenGestureEnabled: isLiquidGlassAvailable() ? false : true,

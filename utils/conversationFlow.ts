@@ -1,7 +1,7 @@
 import { UserSettings } from "./storage";
 
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || "";
-const TEST_MODE = true;
+const TEST_MODE = false;
 
 export type ConversationPhase = 
   | "clarifying"
@@ -49,16 +49,12 @@ export interface ConversationState {
 
 const TEST_FOLLOW_UP_RESPONSES: Record<number, { content: string; quickReplies: string[] }> = {
   0: {
-    content: "I'd love to help you explore this topic! What format works best for you?\n\nWould you like a single focused episode, or a multi-part series that covers different aspects?",
-    quickReplies: ["Single episode", "Multi-part series", "I'm not sure yet"],
+    content: "Great topic! This could be explored in different ways. Would you like a single focused episode, or a multi-part series that dives into different aspects?",
+    quickReplies: ["Single episode", "Multi-part series", "Surprise me"],
   },
   1: {
-    content: "Got it! And how much time do you have? Would you prefer:\n\nA quick 5-minute summary, a standard 10-15 minute episode, or a comprehensive deep-dive that really explores the nuances?",
-    quickReplies: ["Quick summary (5 min)", "Standard episode (10-15 min)", "Deep dive (20+ min)"],
-  },
-  2: {
-    content: "One more thing - what style would work best for you?\n\nWould you like it conversational and casual, more educational and structured, or narrative storytelling style?",
-    quickReplies: ["Conversational", "Educational", "Storytelling"],
+    content: "Are there specific aspects or angles you'd like me to focus on? For example, particular time periods, key figures, or themes you're most interested in?",
+    quickReplies: ["Cover the main highlights", "I have specific interests", "You decide what's most interesting"],
   },
 };
 
@@ -89,7 +85,12 @@ const TEST_SERIES_PLAN: EpisodePlan[] = [
   },
 ];
 
-export function createInitialState(topic: string, voice: string): ConversationState {
+export function createInitialState(
+  topic: string,
+  voice: string,
+  preferredDepth?: "quick" | "standard" | "deep",
+  preferredTone?: "conversational" | "educational" | "storytelling"
+): ConversationState {
   return {
     phase: "clarifying",
     messages: [
@@ -104,9 +105,9 @@ export function createInitialState(topic: string, voice: string): ConversationSt
       originalTopic: topic,
       refinedTopic: topic,
       specificity: null,
-      depth: null,
+      depth: preferredDepth || null,
       format: null,
-      tone: null,
+      tone: preferredTone || null,
       voice,
       episodePlan: null,
       questionCount: 0,
@@ -149,40 +150,36 @@ function analyzeTopicBreadth(topic: string): "specific" | "broad" {
 }
 
 function parseUserResponse(
-  response: string, 
+  response: string,
   questionNumber: number
 ): Partial<ConversationContext> {
   const lowerResponse = response.toLowerCase();
-  
+
   if (questionNumber === 0) {
+    // Question about format (single vs series)
     if (lowerResponse.includes("single") || lowerResponse.includes("one episode") || lowerResponse.includes("focused")) {
       return { specificity: "specific", format: "single" };
     } else if (lowerResponse.includes("multi") || lowerResponse.includes("series") || lowerResponse.includes("multiple")) {
       return { specificity: "broad", format: "series" };
+    } else if (lowerResponse.includes("surprise")) {
+      // Let the AI decide based on topic breadth
+      return { specificity: "general" };
     }
     return { specificity: "general" };
   }
-  
+
   if (questionNumber === 1) {
-    if (lowerResponse.includes("quick") || lowerResponse.includes("5 min") || lowerResponse.includes("summary")) {
-      return { depth: "quick" };
-    } else if (lowerResponse.includes("deep") || lowerResponse.includes("20") || lowerResponse.includes("comprehensive")) {
-      return { depth: "deep" };
+    // Question about specific interests/focus areas
+    if (lowerResponse.includes("specific") || lowerResponse.includes("particular") || lowerResponse.includes("focus on")) {
+      // User has specific interests - mark as refined
+      return { refinedTopic: response };
+    } else if (lowerResponse.includes("highlights") || lowerResponse.includes("main") || lowerResponse.includes("overview")) {
+      return { specificity: "broad" };
     }
-    return { depth: "standard" };
+    // User wants us to decide
+    return {};
   }
-  
-  if (questionNumber === 2) {
-    if (lowerResponse.includes("conversational") || lowerResponse.includes("casual")) {
-      return { tone: "conversational" };
-    } else if (lowerResponse.includes("educational") || lowerResponse.includes("structured")) {
-      return { tone: "educational" };
-    } else if (lowerResponse.includes("story") || lowerResponse.includes("narrative")) {
-      return { tone: "storytelling" };
-    }
-    return { tone: "conversational" };
-  }
-  
+
   return {};
 }
 
@@ -200,11 +197,12 @@ export async function getNextAIResponse(
   
   if (TEST_MODE) {
     await new Promise((resolve) => setTimeout(resolve, 800 + Math.random() * 500));
-    
-    if (context.questionCount < 3) {
+
+    // With preferences set, we only ask 1-2 topic-specific questions
+    if (context.questionCount < 2) {
       const response = TEST_FOLLOW_UP_RESPONSES[context.questionCount];
       updatedContext.questionCount = context.questionCount + 1;
-      
+
       return {
         message: {
           id: generateMessageId(),
@@ -241,11 +239,13 @@ export async function getNextAIResponse(
     }
     
     updatedContext.format = "single";
+    const depthLabel = updatedContext.depth === "quick" ? "quick 5-minute" : updatedContext.depth === "deep" ? "comprehensive deep-dive" : "standard";
+    const toneLabel = updatedContext.tone || "conversational";
     return {
       message: {
         id: generateMessageId(),
         role: "assistant",
-        content: `Perfect! I have everything I need. I'll create a ${updatedContext.depth || "standard"} ${updatedContext.tone || "conversational"} episode about "${context.originalTopic}".\n\nReady to generate your podcast?`,
+        content: `Perfect! I have everything I need. Based on your profile preferences, I'll create a ${depthLabel} ${toneLabel} episode about "${context.originalTopic}".\n\nReady to generate your podcast?`,
         timestamp: Date.now(),
         quickReplies: ["Generate podcast", "Let me adjust something"],
       },
@@ -262,37 +262,86 @@ async function getAIResponseFromAPI(
   userMessage: string | undefined,
   updatedContext: ConversationContext
 ): Promise<{ message: ChatMessage; updatedContext: ConversationContext; nextPhase: ConversationPhase }> {
+  console.log("🔑 API Key status:", OPENAI_API_KEY ? `Present (${OPENAI_API_KEY.substring(0, 10)}...)` : "MISSING");
+
   if (!OPENAI_API_KEY) {
-    throw new Error("OpenAI API key is not configured");
+    throw new Error("OpenAI API key is not configured. Please add EXPO_PUBLIC_OPENAI_API_KEY to your .env file and restart the app.");
   }
-  
-  const systemPrompt = `You are a helpful podcast creation assistant. You're having a conversation to understand what kind of podcast the user wants.
 
-Current context:
-- Original topic: "${updatedContext.originalTopic}"
-- Questions asked so far: ${updatedContext.questionCount}
-- Specificity preference: ${updatedContext.specificity || "unknown"}
-- Depth preference: ${updatedContext.depth || "unknown"}
-- Format preference: ${updatedContext.format || "unknown"}
-- Tone preference: ${updatedContext.tone || "unknown"}
+  const systemPrompt = `You are an enthusiastic podcast creation assistant helping users create educational podcasts on any topic. The user has already set their preferred episode length (${updatedContext.depth || "standard"}) and tone (${updatedContext.tone || "conversational"}) in their profile.
 
-Rules:
-1. Ask only 2-4 clarifying questions total, one at a time
-2. Questions should be simple and conversational
-3. Always provide 2-3 quick reply suggestions in your response
-4. If the topic is broad, ask if they want a specific focus or general overview
-5. After gathering enough info, either:
-   - For broad topics: Suggest a series with 3-5 episode titles
-   - For specific topics: Confirm you're ready to generate
+Your goal is to ask 1-2 TOPIC-SPECIFIC questions to understand what aspects of the topic they want to explore, then create an episode plan.
 
-Format your response as JSON:
+## Current Context
+- Topic: "${updatedContext.originalTopic}"
+- Questions asked: ${updatedContext.questionCount}
+- Format preference: ${updatedContext.format || "not yet determined"}
+- Depth preference: ${updatedContext.depth || "standard"} (from user profile)
+- Tone preference: ${updatedContext.tone || "conversational"} (from user profile)
+
+## What to Ask (1-2 questions max)
+
+### Question 1: Format & Scope
+Assess if the topic is broad enough for a series. Ask whether they want:
+- A single focused episode
+- A multi-part series exploring different aspects
+
+Example: "Great topic! This could be explored in different ways. Would you like a single focused episode, or a multi-part series that dives into different aspects?"
+
+### Question 2 (Optional): Specific Focus
+If the topic is broad, ask about specific angles, time periods, figures, or themes they're most interested in.
+
+Examples:
+- For "European Renaissance": "Are you interested in the art and artists, the political changes, the scientific revolution, or a broad overview?"
+- For "Quantum Computing": "Would you like to focus on how it works, its practical applications, or its potential impact on society?"
+- For "Jazz History": "Any particular era or artists you'd like to focus on, or should I cover the evolution from its origins to today?"
+
+DO NOT ask about:
+- Episode length/depth (already set in profile)
+- Tone/style (already set in profile)
+- Voice preference (already set)
+
+## After Gathering Info
+
+### For Series (if format="series" or topic is broad)
+Create a 3-5 episode plan with:
+- Descriptive, engaging titles
+- Clear focus for each episode
+- 3 specific key points per episode
+- Set "isSeries": true, "isReady": false
+
+Example episode:
 {
-  "content": "Your message here",
-  "quickReplies": ["Option 1", "Option 2", "Option 3"],
-  "episodePlan": null or [{"number": 1, "title": "...", "focus": "...", "keyPoints": ["..."]}],
-  "isReady": false,
-  "isSeries": false
-}`;
+  "number": 1,
+  "title": "The Birth of Jazz: From New Orleans to the World",
+  "focus": "How jazz emerged from African American communities in early 20th century New Orleans",
+  "keyPoints": [
+    "African and Caribbean musical influences that shaped jazz",
+    "Key pioneers: Buddy Bolden, Jelly Roll Morton, Louis Armstrong",
+    "The Great Migration and jazz's spread to Chicago and New York"
+  ]
+}
+
+### For Single Episode
+Confirm you're ready to generate with personalized message mentioning their profile preferences.
+Example: "Perfect! I have everything I need. Based on your preferences, I'll create a ${updatedContext.depth || "standard"} ${updatedContext.tone || "conversational"} episode about '${updatedContext.originalTopic}'.\n\nReady to generate your podcast?"
+Set "isReady": true, "isSeries": false
+
+## Response Format (ALWAYS valid JSON)
+{
+  "content": "Your conversational message (2-3 sentences)",
+  "quickReplies": ["Specific option 1", "Specific option 2", "Specific option 3"],
+  "episodePlan": null or [episode objects],
+  "isReady": false or true,
+  "isSeries": false or true
+}
+
+## Important Rules
+- Keep messages concise and friendly (2-3 sentences max)
+- Quick replies should be specific, actionable options
+- Episode titles should be engaging and descriptive, not generic
+- Each episode should have a distinct focus
+- ALWAYS return valid JSON, nothing else`;
 
   const messages = [
     { role: "system" as const, content: systemPrompt },
@@ -306,6 +355,9 @@ Format your response as JSON:
     messages.push({ role: "user" as const, content: userMessage });
   }
 
+  console.log("📡 Making API call to OpenAI...");
+  console.log("📝 Messages:", messages.length, "messages");
+
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -318,23 +370,36 @@ Format your response as JSON:
         messages,
         max_tokens: 1000,
         temperature: 0.7,
+        response_format: { type: "json_object" },
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`API request failed: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      console.error("❌ API Error Response:", errorData);
+      const errorMessage = errorData.error?.message || `API request failed with status ${response.status}`;
+      throw new Error(errorMessage);
     }
 
+    console.log("✅ API call successful!");
     const data = await response.json();
     const content = data.choices[0]?.message?.content || "";
-    
+    console.log("📄 Response content length:", content.length);
+
     let parsed;
     try {
       parsed = JSON.parse(content);
-    } catch {
+
+      // Validate required fields
+      if (!parsed.content || !Array.isArray(parsed.quickReplies)) {
+        throw new Error("Invalid response structure from API");
+      }
+    } catch (parseError) {
+      console.error("Failed to parse AI response:", content, parseError);
+      // Fallback with the raw content
       parsed = {
-        content,
-        quickReplies: ["Continue", "Start over"],
+        content: content || "I'm having trouble processing that. Could you rephrase?",
+        quickReplies: ["Single episode", "Multi-part series", "Start over"],
         episodePlan: null,
         isReady: false,
         isSeries: false,
@@ -390,17 +455,54 @@ export async function regenerateEpisodePlan(
     throw new Error("OpenAI API key is not configured");
   }
   
-  const prompt = `Create a revised episode plan for a podcast series about "${context.originalTopic}".
+  const prompt = `You are revising a podcast series episode plan based on user feedback.
 
-User feedback: "${feedback}"
+## Original Topic
+"${context.originalTopic}"
 
-Create 3-5 episodes. For each episode provide:
-- number (1-5)
-- title (engaging and specific)
-- focus (one sentence describing what this episode covers)
-- keyPoints (3 main topics to cover)
+## User Feedback
+"${feedback}"
 
-Respond with JSON array only:
+## Your Task
+Create a revised 3-5 episode plan that addresses the user's feedback. Each episode should:
+- Have a specific, engaging title (not generic like "Episode 1")
+- Have a clear, distinct focus
+- Include 3 specific key points to cover
+
+## Good Example
+Topic: "The History of Jazz Music"
+Feedback: "Focus more on specific artists and their innovations"
+
+[
+  {
+    "number": 1,
+    "title": "Louis Armstrong: From New Orleans to Worldwide Fame",
+    "focus": "How Louis Armstrong revolutionized jazz with his virtuosic trumpet playing and scat singing",
+    "keyPoints": [
+      "His early years in New Orleans and influence of King Oliver",
+      "The Hot Five and Hot Seven recordings that changed jazz",
+      "Introduction of scat singing and his influence on vocalists"
+    ]
+  },
+  {
+    "number": 2,
+    "title": "Duke Ellington: The Composer Who Elevated Jazz",
+    "focus": "Duke Ellington's sophisticated compositions and his Cotton Club orchestra",
+    "keyPoints": [
+      "Transition from stride piano to big band leadership",
+      "Signature compositions like 'Mood Indigo' and 'Sophisticated Lady'",
+      "Collaboration with Billy Strayhorn and the Ellington sound"
+    ]
+  }
+]
+
+## Instructions
+- Create 3-5 episodes (adjust count based on feedback if requested)
+- Make titles descriptive and engaging
+- Ensure each episode has a unique angle
+- Respond with ONLY a JSON array, no other text
+
+## Response Format
 [{"number": 1, "title": "...", "focus": "...", "keyPoints": ["...", "...", "..."]}]`;
 
   try {
@@ -412,9 +514,16 @@ Respond with JSON array only:
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 1000,
-        temperature: 0.7,
+        messages: [
+          {
+            role: "system",
+            content: "You are a podcast producer creating episode plans. Always respond with valid JSON arrays only, no additional text."
+          },
+          { role: "user", content: prompt }
+        ],
+        max_tokens: 1500,
+        temperature: 0.8,
+        response_format: { type: "json_object" },
       }),
     });
 
@@ -423,8 +532,21 @@ Respond with JSON array only:
     }
 
     const data = await response.json();
-    const content = data.choices[0]?.message?.content || "[]";
-    return JSON.parse(content);
+    const content = data.choices[0]?.message?.content || "{}";
+
+    // Parse JSON response - with JSON mode it might be wrapped in an object
+    const parsed = JSON.parse(content);
+
+    // Handle both array directly or wrapped in object with "episodes" key
+    if (Array.isArray(parsed)) {
+      return parsed;
+    } else if (parsed.episodes && Array.isArray(parsed.episodes)) {
+      return parsed.episodes;
+    } else if (parsed.plan && Array.isArray(parsed.plan)) {
+      return parsed.plan;
+    }
+
+    throw new Error("Invalid episode plan format returned from API");
   } catch (error) {
     console.error("Error regenerating plan:", error);
     throw error;

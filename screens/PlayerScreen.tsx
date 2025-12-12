@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { StyleSheet, View, Pressable, Alert, Platform, ScrollView, Modal } from "react-native";
+import { StyleSheet, View, Pressable, Alert, Platform, ScrollView, Modal, Linking } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
@@ -15,7 +15,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { LibraryStackParamList } from "@/navigation/LibraryStackNavigator";
 import { CreateStackParamList } from "@/navigation/CreateStackNavigator";
-import { getPodcastById, deletePodcast, Podcast } from "@/utils/storage";
+import { getPodcastById, deletePodcast, Podcast, Source } from "@/utils/storage";
 import { formatDuration } from "@/utils/podcastGenerator";
 import { AnimatedWaveform } from "@/components/AnimatedWaveform";
 
@@ -429,17 +429,51 @@ export default function PlayerScreen({ navigation, route }: PlayerScreenProps) {
 
             <ScrollView style={styles.sourcesList}>
               {podcast.sources && podcast.sources.length > 0 ? (
-                podcast.sources.map((source, index) => (
-                  <View 
-                    key={index} 
-                    style={[styles.sourceItem, { backgroundColor: theme.backgroundSecondary }]}
-                  >
-                    <View style={[styles.sourceNumber, { backgroundColor: theme.primary }]}>
-                      <ThemedText style={styles.sourceNumberText}>{index + 1}</ThemedText>
-                    </View>
-                    <ThemedText style={styles.sourceText}>{source}</ThemedText>
-                  </View>
-                ))
+                podcast.sources.map((source, index) => {
+                  const isSourceObject = typeof source === 'object' && 'url' in source;
+                  const sourceTitle = isSourceObject ? source.title : source;
+                  const sourceUrl = isSourceObject ? source.url : null;
+                  
+                  return (
+                    <Pressable
+                      key={index}
+                      onPress={async () => {
+                        if (sourceUrl) {
+                          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          const canOpen = await Linking.canOpenURL(sourceUrl);
+                          if (canOpen) {
+                            await Linking.openURL(sourceUrl);
+                          } else {
+                            Alert.alert("Error", "Unable to open this link.");
+                          }
+                        }
+                      }}
+                      disabled={!sourceUrl}
+                      style={({ pressed }) => [
+                        styles.sourceItem,
+                        {
+                          backgroundColor: theme.backgroundSecondary,
+                          opacity: sourceUrl ? (pressed ? 0.7 : 1) : 1,
+                        },
+                      ]}
+                    >
+                      <View style={[styles.sourceNumber, { backgroundColor: theme.primary }]}>
+                        <ThemedText style={styles.sourceNumberText}>{index + 1}</ThemedText>
+                      </View>
+                      <View style={styles.sourceContent}>
+                        <ThemedText style={styles.sourceText}>{sourceTitle}</ThemedText>
+                        {sourceUrl && (
+                          <View style={styles.sourceLinkContainer}>
+                            <Feather name="external-link" size={12} color={theme.primary} />
+                            <ThemedText style={[styles.sourceLink, { color: theme.primary }]}>
+                              Tap to view source
+                            </ThemedText>
+                          </View>
+                        )}
+                      </View>
+                    </Pressable>
+                  );
+                })
               ) : (
                 <ThemedText style={{ color: theme.textSecondary }}>
                   No sources available for this podcast.
@@ -637,9 +671,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
-  sourceText: {
+  sourceContent: {
     flex: 1,
+  },
+  sourceText: {
     fontSize: 15,
     lineHeight: 22,
+    marginBottom: Spacing.xs,
+  },
+  sourceLinkContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    marginTop: Spacing.xs,
+  },
+  sourceLink: {
+    fontSize: 12,
+    fontWeight: "500",
   },
 });

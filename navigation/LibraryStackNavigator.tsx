@@ -20,30 +20,26 @@ export default function LibraryStackNavigator() {
   return (
     <Stack.Navigator
       screenOptions={{
-        ...getCommonScreenOptions({ theme, isDark }),
+        ...getCommonScreenOptions({ theme, isDark, showTopBar: true }),
       }}
     >
       <Stack.Screen
         name="Library"
         component={LibraryScreen}
-        options={{
-          headerTitle: "My Podcasts",
-        }}
+        options={{}}
       />
       <Stack.Screen
         name="Player"
         component={PlayerScreen}
         options={{
-          headerTitle: "",
           presentation: "modal",
+          ...getCommonScreenOptions({ theme, isDark, showTopBar: false }),
         }}
       />
       <Stack.Screen
         name="SeriesDetail"
         component={SeriesDetailScreen}
-        options={{
-          headerTitle: "Series",
-        }}
+        options={{}}
       />
     </Stack.Navigator>
   );
