@@ -60,3 +60,6 @@ app-example
 
 replit.md
 .claude/dist
+
+# Local Netlify folder
+.netlify

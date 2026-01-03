@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import {
   signInWithCredential,
+  signInWithPopup,
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -294,27 +295,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = useCallback(async (): Promise<AuthResult> => {
     try {
-      if (!googlePromptAsync) {
-        return { success: false, error: "Google authentication is not available." };
-      }
+      // Use Firebase popup on web, expo-auth-session on mobile
+      if (Platform.OS === 'web') {
+        // Web: Use Firebase's built-in popup
+        const provider = new GoogleAuthProvider();
+        const result = await signInWithPopup(auth, provider);
+        const fbUser = result.user;
 
-      // Create a promise that will be resolved by handleGoogleResponse
-      const signInPromise = new Promise<AuthResult>((resolve) => {
-        googleSignInResolverRef.current = resolve;
-      });
+        // Save/update user data in Firestore
+        const authUser: AuthUser = {
+          id: fbUser.uid,
+          email: fbUser.email,
+          fullName: fbUser.displayName,
+          authMethod: "google",
+          photoUrl: fbUser.photoURL,
+          createdAt: fbUser.metadata.creationTime,
+        };
 
-      // Trigger the OAuth flow
-      const result = await googlePromptAsync();
-
-      if (result.type === "success") {
-        // Wait for handleGoogleResponse to complete Firebase sign-in
-        return await signInPromise;
-      } else if (result.type === "cancel") {
-        googleSignInResolverRef.current = null;
-        return { success: false, error: "Sign in was cancelled." };
+        await saveUserData(fbUser.uid, authUser);
+        return { success: true };
       } else {
-        googleSignInResolverRef.current = null;
-        return { success: false, error: "Failed to sign in with Google. Please try again." };
+        // Mobile: Use expo-auth-session
+        if (!googlePromptAsync) {
+          return { success: false, error: "Google authentication is not available." };
+        }
+
+        // Create a promise that will be resolved by handleGoogleResponse
+        const signInPromise = new Promise<AuthResult>((resolve) => {
+          googleSignInResolverRef.current = resolve;
+        });
+
+        // Trigger the OAuth flow
+        const result = await googlePromptAsync();
+
+        if (result.type === "success") {
+          // Wait for handleGoogleResponse to complete Firebase sign-in
+          return await signInPromise;
+        } else if (result.type === "cancel") {
+          googleSignInResolverRef.current = null;
+          return { success: false, error: "Sign in was cancelled." };
+        } else {
+          googleSignInResolverRef.current = null;
+          return { success: false, error: "Failed to sign in with Google. Please try again." };
+        }
       }
     } catch (error) {
       googleSignInResolverRef.current = null;
