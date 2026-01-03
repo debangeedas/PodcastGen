@@ -78,10 +78,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const googleClientId = Constants.expoConfig?.extra?.googleClientId ||
     process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || "";
 
+  const googleAndroidClientId = Constants.expoConfig?.extra?.googleAndroidClientId ||
+    googleClientId;
+
   const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
     webClientId: googleClientId,
     iosClientId: googleClientId,
-    androidClientId: googleClientId,
+    androidClientId: googleAndroidClientId,
   });
 
   const isGoogleAuthAvailable = !!googleClientId && !!googleRequest;

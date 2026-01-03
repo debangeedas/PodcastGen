@@ -47,6 +47,13 @@
     ],
     "experiments": {
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "a286cc99-a13d-45ce-ba3e-cb84ccfc08a8"
+      },
+      "googleClientId": "566269032122-40jjq2qhcf9bie8hu4jrncdfp3rqoneq.apps.googleusercontent.com",
+      "googleAndroidClientId": "566269032122-t8kddv2o8t2p06kpbjdc2gjuoa5bdqir.apps.googleusercontent.com"
     }
   }
 }

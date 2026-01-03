@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getAuth, initializeAuth, Auth, browserLocalPersistence, indexedDBLocalPersistence } from 'firebase/auth';
+import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { Platform } from 'react-native';
@@ -49,15 +49,9 @@ try {
 let auth: Auth;
 try {
   if (isConfigValid) {
-    // For web, use browser persistence. For native, Firebase handles it automatically
-    if (Platform.OS === 'web') {
-      auth = initializeAuth(app, {
-        persistence: [indexedDBLocalPersistence, browserLocalPersistence],
-      });
-    } else {
-      // For React Native, just use getAuth which has built-in persistence
-      auth = getAuth(app);
-    }
+    // For web, just use getAuth (it handles persistence automatically)
+    // initializeAuth can cause issues with hot reload and Expo web
+    auth = getAuth(app);
   } else {
     auth = {} as Auth;
   }
