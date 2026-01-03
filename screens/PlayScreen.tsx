@@ -13,8 +13,7 @@ import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { formatDuration } from "@/utils/podcastGenerator";
 import { AnimatedWaveform } from "@/components/AnimatedWaveform";
-import { deletePodcast, Source } from "@/utils/storage";
-import { useNavigation } from "@react-navigation/native";
+import { Source } from "@/utils/storage";
 
 interface Sentence {
   text: string;
@@ -26,18 +25,32 @@ function parseScriptToSentences(script: string, totalDuration: number): Sentence
   const sentenceRegex = /[^.!?…]+[.!?…]+/g;
   const matches = script.match(sentenceRegex) || [script];
   const sentences = matches.map(s => s.trim()).filter(s => s.length > 0);
-  
+
   const totalWords = sentences.reduce((sum, s) => sum + s.split(/\s+/).length, 0);
   const wordsPerSecond = totalWords / Math.max(totalDuration, 1);
-  
+
+  // Add a buffer factor to slow down text transitions (1.10 = 10% delay)
+  // This accounts for natural speech variations and pauses
+  const TIMING_BUFFER = 1.10;
+
   let currentTime = 0;
-  return sentences.map(text => {
+  return sentences.map((text, index) => {
     const wordCount = text.split(/\s+/).length;
-    const sentenceDuration = wordCount / wordsPerSecond;
+    let sentenceDuration = wordCount / wordsPerSecond;
+
+    // Apply timing buffer, except for the last sentence to ensure we end on time
+    if (index < sentences.length - 1) {
+      sentenceDuration *= TIMING_BUFFER;
+    } else {
+      // Last sentence: calculate remaining time to hit total duration exactly
+      const remainingTime = totalDuration - currentTime;
+      sentenceDuration = Math.max(sentenceDuration, remainingTime);
+    }
+
     const sentence: Sentence = {
       text,
       startTime: currentTime,
-      endTime: currentTime + sentenceDuration,
+      endTime: Math.min(currentTime + sentenceDuration, totalDuration),
     };
     currentTime += sentenceDuration;
     return sentence;
@@ -47,16 +60,14 @@ function parseScriptToSentences(script: string, totalDuration: number): Sentence
 export default function PlayScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<any>();
-  const { 
-    currentPodcast, 
-    isPlaying, 
-    position, 
-    duration, 
-    togglePlayPause, 
-    seekTo, 
-    skip,
-    stopPlayback 
+  const {
+    currentPodcast,
+    isPlaying,
+    position,
+    duration,
+    togglePlayPause,
+    seekTo,
+    skip
   } = useAudioPlayer();
   
   const [showSourcesModal, setShowSourcesModal] = useState(false);
@@ -112,47 +123,56 @@ export default function PlayScreen() {
 
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
+    const appLink = "https://podcastpilot.app"; // Replace with your actual app link
+    const shareText = `🎧 Check out "${currentPodcast.topic}"
+
+I generated this AI podcast using PodcastPilot! 🤖
+
+Listen here: ${currentPodcast.audioUri}
+
+Want to create your own personalized podcasts on any topic? Try PodcastPilot and turn your curiosity into audio content in minutes.
+
+Download the app: ${appLink}`;
+
     if (Platform.OS === "web") {
-      Alert.alert("Share", "Sharing is not available on web. Use Expo Go to share.");
+      // Web: Use Web Share API if available, otherwise copy link
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: currentPodcast.topic,
+            text: shareText,
+            url: currentPodcast.audioUri,
+          });
+        } catch (error) {
+          // User cancelled or error occurred
+          if ((error as Error).name !== 'AbortError') {
+            console.error("Error sharing:", error);
+            Alert.alert("Share", shareText);
+          }
+        }
+      } else {
+        // Fallback: show share text in alert
+        Alert.alert("Share Podcast", shareText);
+      }
       return;
     }
 
+    // Native: Use Expo Sharing
     try {
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
         await Sharing.shareAsync(currentPodcast.audioUri, {
           mimeType: "audio/mp3",
           dialogTitle: `Share: ${currentPodcast.topic}`,
+          UTI: "public.audio",
         });
       } else {
         Alert.alert("Error", "Sharing is not available on this device");
       }
     } catch (error) {
       console.error("Error sharing:", error);
+      Alert.alert("Error", "Failed to share podcast");
     }
-  };
-
-  const handleDelete = async () => {
-    if (!currentPodcast) return;
-
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(
-      "Delete Podcast",
-      "Are you sure you want to delete this podcast?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            await stopPlayback();
-            await deletePodcast(currentPodcast.id);
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            navigation.navigate("LibraryTab");
-          },
-        },
-      ]
-    );
   };
 
   const handleSentencePress = async (index: number) => {
@@ -192,9 +212,6 @@ export default function PlayScreen() {
         showsVerticalScrollIndicator={false}
       >
         {sentences.map((sentence, index) => {
-          const isActive = index === currentSentenceIndex;
-          const isPast = index < currentSentenceIndex;
-          
           return (
             <Pressable
               key={index}
@@ -203,15 +220,7 @@ export default function PlayScreen() {
                 sentenceRefs.current[index] = event.nativeEvent.layout.y;
               }}
             >
-              <ThemedText
-                style={[
-                  styles.lyricText,
-                  isActive && styles.lyricTextActive,
-                  isActive && { color: theme.primary },
-                  isPast && styles.lyricTextPast,
-                  isPast && { opacity: 0.35 },
-                ]}
-              >
+              <ThemedText style={styles.lyricText}>
                 {sentence.text}
               </ThemedText>
             </Pressable>
@@ -309,27 +318,15 @@ export default function PlayScreen() {
             </ThemedText>
           </Pressable>
 
-          <View style={styles.actionButtons}>
-            <Pressable
-              onPress={handleShare}
-              style={({ pressed }) => [
-                styles.actionButton,
-                { backgroundColor: theme.backgroundSecondary, opacity: pressed ? 0.7 : 1 },
-              ]}
-            >
-              <Feather name="share" size={18} color={theme.text} />
-            </Pressable>
-
-            <Pressable
-              onPress={handleDelete}
-              style={({ pressed }) => [
-                styles.actionButton,
-                { backgroundColor: theme.backgroundSecondary, opacity: pressed ? 0.7 : 1 },
-              ]}
-            >
-              <Feather name="trash-2" size={18} color={theme.error} />
-            </Pressable>
-          </View>
+          <Pressable
+            onPress={handleShare}
+            style={({ pressed }) => [
+              styles.actionButton,
+              { backgroundColor: theme.backgroundSecondary, opacity: pressed ? 0.7 : 1 },
+            ]}
+          >
+            <Feather name="share" size={18} color={theme.text} />
+          </Pressable>
         </View>
       </View>
 

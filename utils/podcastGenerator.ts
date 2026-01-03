@@ -722,6 +722,56 @@ Think: "What would make ME excited to learn about this?" Then write that script.
   }
 }
 
+// Split text into chunks that respect sentence boundaries
+function splitIntoChunks(text: string, maxLength: number = 4000): string[] {
+  if (text.length <= maxLength) {
+    return [text];
+  }
+
+  const chunks: string[] = [];
+  // Split by paragraphs first (double newline or single newline)
+  const paragraphs = text.split(/\n\n|\n/).filter(p => p.trim());
+
+  let currentChunk = '';
+
+  for (const paragraph of paragraphs) {
+    // If adding this paragraph would exceed the limit
+    if (currentChunk.length + paragraph.length + 2 > maxLength) {
+      // If current chunk has content, save it
+      if (currentChunk.trim()) {
+        chunks.push(currentChunk.trim());
+        currentChunk = '';
+      }
+
+      // If paragraph itself is too long, split by sentences
+      if (paragraph.length > maxLength) {
+        const sentences = paragraph.match(/[^.!?]+[.!?]+/g) || [paragraph];
+        for (const sentence of sentences) {
+          if (currentChunk.length + sentence.length + 1 > maxLength) {
+            if (currentChunk.trim()) {
+              chunks.push(currentChunk.trim());
+            }
+            currentChunk = sentence;
+          } else {
+            currentChunk += (currentChunk ? ' ' : '') + sentence;
+          }
+        }
+      } else {
+        currentChunk = paragraph;
+      }
+    } else {
+      currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
+    }
+  }
+
+  // Add remaining chunk
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+
+  return chunks;
+}
+
 async function generateAudio(
   script: string,
   podcastId: string,
@@ -742,28 +792,42 @@ async function generateAudio(
   }
 
   try {
-    const response = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "tts-1-hd",
-        input: script,
-        voice: voice,
-        response_format: "mp3",
-      }),
-    });
+    // Split script into chunks if it's too long (OpenAI has 4096 char limit)
+    const chunks = splitIntoChunks(script, 4000);
+    const audioBlobs: Blob[] = [];
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `TTS API request failed: ${response.status} - ${errorText}`
-      );
+    // Generate audio for each chunk
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const response = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "tts-1-hd",
+          input: chunk,
+          voice: voice,
+          response_format: "mp3",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `TTS API request failed: ${response.status} - ${errorText}`
+        );
+      }
+
+      const chunkBlob = await response.blob();
+      audioBlobs.push(chunkBlob);
     }
 
-    const audioBlob = await response.blob();
+    // If multiple chunks, we need to combine them
+    const audioBlob = audioBlobs.length === 1
+      ? audioBlobs[0]
+      : new Blob(audioBlobs, { type: 'audio/mpeg' });
     const wordCount = script.split(/\s+/).length;
     const estimatedDuration = Math.round((wordCount / 150) * 60);
 
