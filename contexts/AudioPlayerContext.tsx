@@ -8,6 +8,7 @@ interface AudioPlayerState {
   position: number;
   duration: number;
   isLoading: boolean;
+  playbackSpeed: number;
 }
 
 interface AudioPlayerContextType extends AudioPlayerState {
@@ -16,6 +17,7 @@ interface AudioPlayerContextType extends AudioPlayerState {
   seekTo: (seconds: number) => Promise<void>;
   skip: (seconds: number) => Promise<void>;
   stopPlayback: () => Promise<void>;
+  setPlaybackSpeed: (speed: number) => Promise<void>;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextType | undefined>(undefined);
@@ -26,6 +28,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [playbackSpeed, setPlaybackSpeedState] = useState(1.0);
   const soundRef = useRef<Audio.Sound | null>(null);
   const isSeekingRef = useRef(false);
 
@@ -94,7 +97,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
       const { sound } = await Audio.Sound.createAsync(
         { uri: podcast.audioUri },
-        { shouldPlay: true },
+        { shouldPlay: true, rate: playbackSpeed, shouldCorrectPitch: true },
         onPlaybackStatusUpdate
       );
       soundRef.current = sound;
@@ -141,6 +144,17 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     setDuration(0);
   }, [unloadCurrentAudio]);
 
+  const setPlaybackSpeed = useCallback(async (speed: number) => {
+    if (!soundRef.current) return;
+
+    try {
+      await soundRef.current.setRateAsync(speed, true); // true = shouldCorrectPitch
+      setPlaybackSpeedState(speed);
+    } catch (error) {
+      console.error("Error setting playback speed:", error);
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
       unloadCurrentAudio();
@@ -155,11 +169,13 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         position,
         duration,
         isLoading,
+        playbackSpeed,
         playPodcast,
         togglePlayPause,
         seekTo,
         skip,
         stopPlayback,
+        setPlaybackSpeed,
       }}
     >
       {children}

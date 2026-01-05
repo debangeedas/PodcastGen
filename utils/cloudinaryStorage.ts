@@ -8,12 +8,6 @@ const CLOUDINARY_UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESE
 
 export const isCloudinaryConfigured = !!(CLOUDINARY_CLOUD_NAME && CLOUDINARY_UPLOAD_PRESET);
 
-console.log("☁️ Cloudinary:", {
-  cloudName: CLOUDINARY_CLOUD_NAME || "❌ Not set",
-  preset: CLOUDINARY_UPLOAD_PRESET || "❌ Not set",
-  configured: isCloudinaryConfigured ? "✅ Ready" : "❌ Not configured",
-});
-
 /**
  * Upload audio blob to Cloudinary using unsigned upload
  */
@@ -25,8 +19,6 @@ export async function uploadAudioToCloudinary(
   if (!isCloudinaryConfigured) {
     throw new Error("Cloudinary not configured");
   }
-
-  console.log("☁️ Uploading to Cloudinary...", { podcastId, size: audioBlob.size });
 
   const formData = new FormData();
   formData.append("file", audioBlob);
@@ -46,23 +38,27 @@ export async function uploadAudioToCloudinary(
   }
 
   const result = await response.json();
-  console.log("✅ Uploaded to Cloudinary:", result.secure_url);
+
+  // Verify we got a valid secure URL
+  if (!result.secure_url) {
+    throw new Error("Cloudinary upload succeeded but no URL returned");
+  }
 
   return result.secure_url;
 }
 
 /**
- * Upload with timeout
+ * Upload with timeout - increased to 120 seconds for large audio files
  */
 export async function uploadWithTimeout(
   audioBlob: Blob,
   podcastId: string,
   userId: string,
-  timeoutMs: number = 30000
+  timeoutMs: number = 120000
 ): Promise<string> {
   const uploadPromise = uploadAudioToCloudinary(audioBlob, podcastId, userId);
   const timeoutPromise = new Promise<string>((_, reject) =>
-    setTimeout(() => reject(new Error("Upload timeout")), timeoutMs)
+    setTimeout(() => reject(new Error("Upload timeout after " + (timeoutMs / 1000) + " seconds")), timeoutMs)
   );
 
   return await Promise.race([uploadPromise, timeoutPromise]);

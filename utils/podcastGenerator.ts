@@ -4,6 +4,7 @@ import { Podcast, PodcastSeries, getCurrentUserId, Source } from "./storage";
 import { uploadWithTimeout, isCloudinaryConfigured } from "./cloudinaryStorage";
 
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || "";
+const TAVILY_API_KEY = process.env.EXPO_PUBLIC_TAVILY_API_KEY || "";
 
 const TEST_MODE = false; // Set to true to skip API calls and use dummy data
 
@@ -80,71 +81,198 @@ interface SeriesOutline {
   episodes: EpisodeOutline[];
 }
 
-async function findRealSources(topic: string): Promise<Source[]> {
-  const sources: Source[] = [];
-  
+async function findAndValidateSources(topic: string): Promise<Source[]> {
+  // Try Tavily first for high-quality, AI-optimized search results
+  if (TAVILY_API_KEY) {
+    try {
+      const tavilySources = await tavilySourceSearch(topic);
+      if (tavilySources.length > 0) {
+        return tavilySources;
+      }
+    } catch (error) {
+      console.error("⚠️ Tavily search failed:", error);
+    }
+  }
+
+  // Fallback to Wikipedia + DuckDuckGo
+  return await basicSourceSearch(topic);
+}
+
+// Validate that a URL is properly formed and uses a valid protocol
+function isValidUrl(urlString: string): boolean {
   try {
-    // Always try to get Wikipedia source first (most reliable)
-    const searchResponse = await fetch(
-      `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(topic)}&limit=1&format=json&origin=*`
+    const url = new URL(urlString);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+// Use Tavily API for high-quality source discovery
+async function tavilySourceSearch(topic: string): Promise<Source[]> {
+  if (!TAVILY_API_KEY) {
+    throw new Error("Tavily API key not configured");
+  }
+
+  try {
+    const response = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        api_key: TAVILY_API_KEY,
+        query: topic,
+        search_depth: "advanced", // Use advanced search for better quality
+        include_raw_content: false, // We'll use Jina Reader for content extraction
+        max_results: 5, // Get 5 results, we'll filter to top 3
+        include_domains: [], // No domain restrictions
+        exclude_domains: [], // No domain exclusions
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Tavily API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.results || !Array.isArray(data.results)) {
+      return [];
+    }
+
+    // Map Tavily results to Source objects
+    const sources: Source[] = data.results
+      .filter((result: any) => result.url && result.title && isValidUrl(result.url))
+      .slice(0, 3) // Limit to top 3 sources
+      .map((result: any) => ({
+        title: result.title,
+        url: result.url,
+      }));
+
+    return sources;
+  } catch (error) {
+    console.error("❌ Error in Tavily search:", error);
+    throw error;
+  }
+}
+
+// Search for real, working URLs from reliable APIs
+async function basicSourceSearch(topic: string): Promise<Source[]> {
+  const sources: Source[] = [];
+
+  try {
+    // Try Wikipedia first - most reliable source with guaranteed working URLs
+    const wikiResponse = await fetch(
+      `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(topic)}&limit=3&format=json&origin=*`
     );
 
-    if (searchResponse.ok) {
-      const searchData = await searchResponse.json();
-      const articleTitle = searchData[1]?.[0];
-      const articleUrl = searchData[3]?.[0];
+    if (wikiResponse.ok) {
+      const wikiData = await wikiResponse.json();
+      const titles = wikiData[1] || [];
+      const descriptions = wikiData[2] || [];
+      const urls = wikiData[3] || [];
 
-      if (articleTitle && articleUrl) {
-        sources.push({
-          title: `${articleTitle} - Wikipedia`,
-          url: articleUrl,
-        });
+      for (let i = 0; i < Math.min(titles.length, urls.length); i++) {
+        if (titles[i] && urls[i] && isValidUrl(urls[i])) {
+          sources.push({
+            title: `${titles[i]} - Wikipedia`,
+            url: urls[i],
+          });
+        }
       }
     }
 
-    // Try to find additional authoritative sources based on topic
-    const topicLower = topic.toLowerCase();
-    const currentYear = new Date().getFullYear();
+    // Try DuckDuckGo Instant Answer API for additional sources
+    const searchResponse = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(topic)}&format=json&no_html=1&skip_disambig=1`
+    );
 
-    // Add domain-specific sources
-    if (topicLower.includes("space") || topicLower.includes("astro") || topicLower.includes("planet") || topicLower.includes("nasa")) {
-      sources.push({
-        title: `NASA - ${topic}`,
-        url: `https://www.nasa.gov/search/?q=${encodeURIComponent(topic)}`,
-      });
-    }
-    
-    if (topicLower.includes("health") || topicLower.includes("medical") || topicLower.includes("disease") || topicLower.includes("medicine")) {
-      sources.push({
-        title: `National Institutes of Health - ${topic}`,
-        url: `https://www.nih.gov/search?q=${encodeURIComponent(topic)}`,
-      });
-    }
-    
-    if (topicLower.includes("history") || topicLower.includes("war") || topicLower.includes("ancient") || topicLower.includes("historical")) {
-      sources.push({
-        title: `Encyclopædia Britannica - ${topic}`,
-        url: `https://www.britannica.com/search?query=${encodeURIComponent(topic)}`,
-      });
+    if (searchResponse.ok) {
+      const data = await searchResponse.json();
+
+      // Add the main abstract source if available and URL is valid
+      if (data.AbstractURL && data.AbstractSource && data.AbstractURL !== '' && isValidUrl(data.AbstractURL)) {
+        // Check if this URL is already in sources (avoid duplicates)
+        if (!sources.some(s => s.url === data.AbstractURL)) {
+          sources.push({
+            title: `${data.Heading || topic} - ${data.AbstractSource}`,
+            url: data.AbstractURL,
+          });
+        }
+      }
+
+      // Add related topics with valid URLs
+      if (data.RelatedTopics && Array.isArray(data.RelatedTopics)) {
+        for (const relatedTopic of data.RelatedTopics.slice(0, 2)) {
+          if (relatedTopic.FirstURL && relatedTopic.Text && isValidUrl(relatedTopic.FirstURL)) {
+            // Avoid duplicates
+            if (!sources.some(s => s.url === relatedTopic.FirstURL)) {
+              const titleMatch = relatedTopic.Text.match(/^([^-]+)/);
+              const title = titleMatch ? titleMatch[1].trim() : relatedTopic.Text.substring(0, 60);
+              sources.push({
+                title: title,
+                url: relatedTopic.FirstURL,
+              });
+            }
+          }
+        }
+      }
     }
 
-    // Always ensure at least one source (Wikipedia or fallback)
+    // If still no sources, provide a Wikipedia search link as fallback
     if (sources.length === 0) {
-      // Fallback: Use Wikipedia search page
       sources.push({
         title: `Wikipedia - ${topic}`,
         url: `https://en.wikipedia.org/wiki/Special:Search/${encodeURIComponent(topic)}`,
       });
     }
 
-    return sources.slice(0, 5); // Limit to 5 sources
+    return sources.slice(0, 3);
   } catch (error) {
-    console.error("Error finding real sources:", error);
-    // Always return at least one fallback source
+    console.error("❌ Error in source search:", error);
+    // Return Wikipedia search as ultimate fallback
     return [{
       title: `Wikipedia - ${topic}`,
       url: `https://en.wikipedia.org/wiki/Special:Search/${encodeURIComponent(topic)}`,
     }];
+  }
+}
+
+async function fetchArticleContent(url: string): Promise<string> {
+  try {
+    // Use Jina AI Reader - a free service that can extract clean content from ANY URL
+    // No API key required, works with news sites, blogs, academic articles, etc.
+    // It bypasses CORS and paywalls, returning clean markdown content
+    const jinaUrl = `https://r.jina.ai/${url}`;
+
+    const response = await fetch(jinaUrl, {
+      headers: {
+        'Accept': 'application/json',
+        'X-Return-Format': 'text', // Get plain text instead of markdown
+      },
+    });
+
+    if (!response.ok) {
+      return '';
+    }
+
+    const text = await response.text();
+
+    // Limit to 8000 characters per source for comprehensive content extraction
+    // With 3 sources max, this gives ~24k chars total, well within GPT-4o-mini's 128k token limit
+    // This captures full article context including examples, details, and conclusions
+    const content = text.substring(0, 8000).trim();
+
+    if (content.length < 100) {
+      return '';
+    }
+
+    return content;
+  } catch (error) {
+    console.error(`Error fetching content from ${url}:`, error);
+    return '';
   }
 }
 
@@ -163,12 +291,46 @@ async function researchTopic(topic: string): Promise<ResearchResult> {
     );
   }
 
-  // Get real, verifiable sources first
-  console.log("🔍 Finding real sources for:", topic);
-  const realSources = await findRealSources(topic);
-  console.log("✅ Found sources:", realSources.length);
+  // Find and validate high-quality sources
+  const realSources = await findAndValidateSources(topic);
 
-  const researchPrompt = `You are researching a topic for an educational podcast. Provide comprehensive, accurate information from your knowledge base that will be used to create an engaging audio script.
+  // Fetch actual content from sources
+  const sourceContents = await Promise.all(
+    realSources.map(async (source) => {
+      const content = await fetchArticleContent(source.url);
+      return {
+        title: source.title,
+        url: source.url,
+        content: content,
+      };
+    })
+  );
+
+  // Filter to sources that have valid content (at least 200 chars of substance)
+  const sourcesWithContent = sourceContents.filter(s => {
+    if (s.content.length < 200) return false;
+
+    // Check if content looks like an actual article (not error page or redirect)
+    const lowerContent = s.content.toLowerCase();
+    const isError = lowerContent.includes('404') ||
+                    lowerContent.includes('not found') ||
+                    lowerContent.includes('page does not exist') ||
+                    lowerContent.includes('error occurred');
+
+    return !isError;
+  });
+
+  // Build context from actual article content
+  let articleContext = '';
+  if (sourcesWithContent.length > 0) {
+    articleContext = '\n\n## Source Material\n\n';
+    sourcesWithContent.forEach((source, index) => {
+      articleContext += `### Source ${index + 1}: ${source.title}\n${source.content}\n\n`;
+    });
+  }
+
+  const researchPrompt = `You are researching a topic for an educational podcast. ${sourcesWithContent.length > 0 ? 'Use the provided source material below as your PRIMARY reference.' : 'Provide comprehensive, accurate information from your knowledge base.'} Create engaging, accurate content for an audio script.
+${articleContext}
 
 ## Topic
 "${topic}"

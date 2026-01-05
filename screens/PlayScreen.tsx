@@ -26,34 +26,21 @@ function parseScriptToSentences(script: string, totalDuration: number): Sentence
   const matches = script.match(sentenceRegex) || [script];
   const sentences = matches.map(s => s.trim()).filter(s => s.length > 0);
 
-  const totalWords = sentences.reduce((sum, s) => sum + s.split(/\s+/).length, 0);
-  const wordsPerSecond = totalWords / Math.max(totalDuration, 1);
+  if (sentences.length === 0) return [];
 
-  // Add a buffer factor to slow down text transitions (1.10 = 10% delay)
-  // This accounts for natural speech variations and pauses
-  const TIMING_BUFFER = 1.10;
+  // Simple approach: divide total duration evenly by number of sentences
+  // This is more reliable than word-count estimation
+  const avgSentenceDuration = totalDuration / sentences.length;
 
-  let currentTime = 0;
   return sentences.map((text, index) => {
-    const wordCount = text.split(/\s+/).length;
-    let sentenceDuration = wordCount / wordsPerSecond;
+    const startTime = index * avgSentenceDuration;
+    const endTime = (index + 1) * avgSentenceDuration;
 
-    // Apply timing buffer, except for the last sentence to ensure we end on time
-    if (index < sentences.length - 1) {
-      sentenceDuration *= TIMING_BUFFER;
-    } else {
-      // Last sentence: calculate remaining time to hit total duration exactly
-      const remainingTime = totalDuration - currentTime;
-      sentenceDuration = Math.max(sentenceDuration, remainingTime);
-    }
-
-    const sentence: Sentence = {
+    return {
       text,
-      startTime: currentTime,
-      endTime: Math.min(currentTime + sentenceDuration, totalDuration),
+      startTime,
+      endTime: Math.min(endTime, totalDuration),
     };
-    currentTime += sentenceDuration;
-    return sentence;
   });
 }
 
@@ -67,27 +54,33 @@ export default function PlayScreen() {
     duration,
     togglePlayPause,
     seekTo,
-    skip
+    skip,
+    playbackSpeed,
+    setPlaybackSpeed
   } = useAudioPlayer();
   
   const [showSourcesModal, setShowSourcesModal] = useState(false);
+  const [showSpeedModal, setShowSpeedModal] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const sentenceRefs = useRef<{ [key: number]: number }>({});
   const isSeeking = useRef(false);
 
   const sentences = useMemo(() => {
     if (!currentPodcast?.script) return [];
+    // Use base duration (at 1x speed) for consistent timing regardless of playback speed
     return parseScriptToSentences(currentPodcast.script, duration);
   }, [currentPodcast?.script, duration]);
 
   const currentSentenceIndex = useMemo(() => {
-    for (let i = sentences.length - 1; i >= 0; i--) {
-      if (position >= sentences[i].startTime) {
-        return i;
-      }
-    }
-    return 0;
-  }, [position, sentences]);
+    // Calculate what percentage of the audio has been played
+    const progressPercentage = duration > 0 ? position / duration : 0;
+
+    // Find the sentence at this percentage, regardless of playback speed
+    const targetSentenceIndex = Math.floor(progressPercentage * sentences.length);
+
+    // Clamp to valid range
+    return Math.max(0, Math.min(targetSentenceIndex, sentences.length - 1));
+  }, [position, duration, sentences]);
 
   useEffect(() => {
     if (scrollViewRef.current && sentenceRefs.current[currentSentenceIndex] !== undefined) {
@@ -181,6 +174,17 @@ Download the app: ${appLink}`;
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await seekTo(sentence.startTime);
     }
+  };
+
+  const handleSpeedPress = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowSpeedModal(true);
+  };
+
+  const handleSpeedSelect = async (speed: number) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await setPlaybackSpeed(speed);
+    setShowSpeedModal(false);
   };
 
   if (!currentPodcast) {
@@ -278,6 +282,21 @@ Download the app: ${appLink}`;
             >
               <Feather name="rotate-cw" size={20} color={theme.text} />
               <ThemedText style={styles.skipLabel}>15</ThemedText>
+            </Pressable>
+
+            <Pressable
+              onPress={handleSpeedPress}
+              style={({ pressed }) => [
+                styles.speedButton,
+                {
+                  backgroundColor: theme.backgroundSecondary,
+                  opacity: pressed ? 0.7 : 1
+                }
+              ]}
+            >
+              <ThemedText style={[styles.speedButtonText, { color: theme.text }]}>
+                {playbackSpeed}x
+              </ThemedText>
             </Pressable>
           </View>
         </View>
@@ -409,6 +428,61 @@ Download the app: ${appLink}`;
                 </ThemedText>
               )}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showSpeedModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSpeedModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => setShowSpeedModal(false)}
+          />
+          <View style={[styles.speedModal, { backgroundColor: theme.backgroundDefault }]}>
+            <View style={styles.modalHeader}>
+              <ThemedText style={styles.modalTitle}>Playback Speed</ThemedText>
+              <Pressable
+                onPress={() => setShowSpeedModal(false)}
+                style={({ pressed }) => [styles.closeButton, { opacity: pressed ? 0.7 : 1 }]}
+              >
+                <Feather name="x" size={24} color={theme.text} />
+              </Pressable>
+            </View>
+
+            <View style={styles.speedOptions}>
+              {[0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((speed) => (
+                <Pressable
+                  key={speed}
+                  onPress={() => handleSpeedSelect(speed)}
+                  style={({ pressed }) => [
+                    styles.speedOption,
+                    {
+                      backgroundColor: playbackSpeed === speed
+                        ? theme.primary
+                        : theme.backgroundSecondary,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <ThemedText
+                    style={[
+                      styles.speedOptionText,
+                      {
+                        color: playbackSpeed === speed ? "#FFFFFF" : theme.text,
+                        fontWeight: playbackSpeed === speed ? "700" : "600",
+                      },
+                    ]}
+                  >
+                    {speed}x
+                  </ThemedText>
+                </Pressable>
+              ))}
+            </View>
           </View>
         </View>
       </Modal>
@@ -546,6 +620,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  speedButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 48,
+  },
+  speedButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -649,5 +735,28 @@ const styles = StyleSheet.create({
   sourceLink: {
     fontSize: 12,
     fontWeight: "500",
+  },
+  speedModal: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing["3xl"],
+  },
+  speedOptions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.md,
+    marginTop: Spacing.lg,
+  },
+  speedOption: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.md,
+    minWidth: 70,
+    alignItems: "center",
+  },
+  speedOptionText: {
+    fontSize: 16,
   },
 });

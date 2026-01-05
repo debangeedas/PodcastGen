@@ -89,8 +89,12 @@ export const defaultSettings: UserSettings = {
 
 /**
  * Validates if an audio file exists and is accessible
+ * Uses retry logic with exponential backoff for remote URLs to handle temporary network issues
  */
-async function validateAudioFile(audioUri: string | null | undefined): Promise<boolean> {
+async function validateAudioFile(
+  audioUri: string | null | undefined,
+  retries: number = 2
+): Promise<boolean> {
   if (!audioUri) {
     return false;
   }
@@ -98,25 +102,58 @@ async function validateAudioFile(audioUri: string | null | undefined): Promise<b
   try {
     // Check if it's a remote URL (http/https)
     if (audioUri.startsWith('http://') || audioUri.startsWith('https://')) {
-      // For remote URLs, try a HEAD request to check if file exists
-      try {
-        const response = await fetch(audioUri, { method: 'HEAD' });
-        return response.ok;
-      } catch {
-        // If HEAD fails, assume it might still be valid (could be CORS issue)
-        // Remote URLs are generally trusted to exist
-        return true;
+      // For remote URLs, use retry logic with backoff
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          // Add timeout to prevent hanging
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+          const response = await fetch(audioUri, {
+            method: 'HEAD',
+            signal: controller.signal
+          });
+
+          clearTimeout(timeoutId);
+
+          // If we get a definitive 404, don't retry
+          if (response.status === 404 || response.status === 410) {
+            return false;
+          }
+
+          // Success
+          if (response.ok) {
+            return true;
+          }
+
+          // For other errors (500, 503, etc), retry
+          if (attempt < retries) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+            continue;
+          }
+
+          // Last attempt failed with non-404 error - assume network issue, keep the podcast
+          return true;
+        } catch (error) {
+          // Network error or timeout
+          if (attempt < retries) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+            continue;
+          }
+          // After all retries, assume temporary network issue - don't delete
+          return true;
+        }
       }
     }
 
     // Check if it's a blob URL (web only, temporary)
     if (audioUri.startsWith('blob:')) {
       // Blob URLs are temporary and may not exist after page reload
-      // We'll check if we can create an object from it
       try {
         const response = await fetch(audioUri);
         return response.ok;
       } catch {
+        // Blob URLs that fail are definitely gone
         return false;
       }
     }
@@ -131,17 +168,31 @@ async function validateAudioFile(audioUri: string | null | undefined): Promise<b
     return true;
   } catch (error) {
     console.error("Error validating audio file:", error);
-    return false;
+    // On error, be conservative and keep the podcast
+    return true;
   }
 }
 
+// Cache for last validation time to avoid validating too frequently
+let lastValidationTime = 0;
+const VALIDATION_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+
 /**
  * Filters out podcasts with missing or invalid audio files
+ * Only validates once per day to avoid aggressive deletion due to temporary network issues
  */
-async function filterValidPodcasts(podcasts: Podcast[]): Promise<Podcast[]> {
+async function filterValidPodcasts(podcasts: Podcast[], forceValidation: boolean = false): Promise<Podcast[]> {
   if (podcasts.length === 0) {
     return [];
   }
+
+  // Skip validation if we validated recently (unless forced)
+  const now = Date.now();
+  if (!forceValidation && (now - lastValidationTime) < VALIDATION_INTERVAL) {
+    return podcasts;
+  }
+
+  lastValidationTime = now;
 
   // Validate all podcasts in parallel for better performance
   const validationPromises = podcasts.map(async (podcast) => {
@@ -150,7 +201,7 @@ async function filterValidPodcasts(podcasts: Podcast[]): Promise<Podcast[]> {
   });
 
   const results = await Promise.all(validationPromises);
-  
+
   const validPodcasts: Podcast[] = [];
   const invalidPodcastIds: string[] = [];
 
@@ -158,12 +209,12 @@ async function filterValidPodcasts(podcasts: Podcast[]): Promise<Podcast[]> {
     if (isValid) {
       validPodcasts.push(podcast);
     } else {
-      console.warn(`⚠️ Removing podcast "${podcast.topic}" (ID: ${podcast.id}) - audio file missing or invalid`);
       invalidPodcastIds.push(podcast.id);
     }
   }
 
-  // Remove invalid podcasts from storage if any were found
+  // Remove invalid podcasts from local storage only
+  // Note: We don't delete from Firestore to preserve user data in the cloud
   if (invalidPodcastIds.length > 0) {
     try {
       const allPodcastsData = await AsyncStorage.getItem(PODCASTS_KEY);
@@ -171,7 +222,6 @@ async function filterValidPodcasts(podcasts: Podcast[]): Promise<Podcast[]> {
         const parsed = JSON.parse(allPodcastsData) as Podcast[];
         const filtered = parsed.filter((p) => !invalidPodcastIds.includes(p.id));
         await AsyncStorage.setItem(PODCASTS_KEY, JSON.stringify(filtered));
-        console.log(`🧹 Cleaned up ${invalidPodcastIds.length} podcast(s) with missing audio files`);
       }
     } catch (error) {
       console.error("Error cleaning up invalid podcasts:", error);
@@ -479,6 +529,51 @@ export async function clearAllData(): Promise<void> {
 }
 
 /**
+ * Fix podcasts that have blob URLs by reconstructing their Cloudinary URLs
+ * This happens when uploads succeeded but timed out, leaving blob URLs in storage
+ */
+export async function fixBlobUrlPodcasts(): Promise<number> {
+  const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || "";
+
+  if (!CLOUDINARY_CLOUD_NAME || !currentUserId) {
+    return 0;
+  }
+
+  try {
+    const podcasts = await getPodcasts();
+    let fixedCount = 0;
+
+    for (const podcast of podcasts) {
+      // Check if this podcast has a blob URL
+      if (podcast.audioUri && podcast.audioUri.startsWith('blob:')) {
+        // Construct the expected Cloudinary URL
+        const cloudinaryUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/podcasts/${currentUserId}/${podcast.id}.mp3`;
+
+        // Verify the Cloudinary URL exists
+        try {
+          const response = await fetch(cloudinaryUrl, { method: 'HEAD' });
+          if (response.ok) {
+            // Update the podcast with the correct URL
+            podcast.audioUri = cloudinaryUrl;
+            await savePodcast(podcast);
+            fixedCount++;
+            console.log(`✅ Fixed podcast: ${podcast.id}`);
+          }
+        } catch (error) {
+          // Cloudinary URL doesn't exist, skip this podcast
+          console.log(`⚠️ Cloudinary file not found for: ${podcast.id}`);
+        }
+      }
+    }
+
+    return fixedCount;
+  } catch (error) {
+    console.error("Error fixing blob URL podcasts:", error);
+    return 0;
+  }
+}
+
+/**
  * Initial sync when user logs in - load all data from Firestore
  */
 export async function loadUserDataFromFirestore(userId: string): Promise<void> {
@@ -497,6 +592,12 @@ export async function loadUserDataFromFirestore(userId: string): Promise<void> {
       series: data.series.length,
       searches: data.recentSearches.length,
     });
+
+    // Fix any podcasts with blob URLs (happens when upload succeeded but timed out)
+    const fixedCount = await fixBlobUrlPodcasts();
+    if (fixedCount > 0) {
+      console.log(`✅ Fixed ${fixedCount} podcast(s) with blob URLs`);
+    }
   } catch (error) {
     console.error('❌ Error loading user data from Firestore:', error);
   }
